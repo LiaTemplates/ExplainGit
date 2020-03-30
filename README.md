@@ -11,37 +11,54 @@ narrator: US English Female
 
 dark: true
 
+@onload
+customElements.define('explain-git', class extends HTMLElement {
+  constructor () {
+    super()
+  }
+
+  connectedCallback () {
+    this.code = this.textContent;
+    this.textContent = "";
+
+    this.id_ = Math.random().toString(36);
+
+    const iframe = document.createElement('iframe');
+    iframe.style = "width: 100%; height: 600px"
+    this.appendChild(iframe);
+
+    iframe.id = this.id_;
+
+    this.frame = iframe;
+    this.init()
+  }
+
+  init() {
+    const input = this.code.replace(/;\s?/g, "|");
+
+    const url = 'https://kokokotlin.github.io/#' + input;
+
+    this.frame.contentWindow.location.reload(true);
+    this.frame.contentWindow.location.replace(url);
+  }
+
+  disconnectedCallback () {
+    this.removeChild(this.frame);
+  }
+});
+
+@end
+
 @ExplainGit: @ExplainGit_(@uid,```@0```)
 
 @ExplainGit_
-<iframe width=100% height=600px id="explain_@0"></iframe>
-
-<script>
-  const url = 'https://kokokotlin.github.io/';
-
-  const frame = document.getElementById("explain_@0");
-  frame.contentWindow.location.reload(true);
-  frame.contentWindow.location.replace(url);
-
-  "LIA: stop"
-</script>
+  <explain-git></explain-git>
 @end
 
 @ExplainGit.eval: @ExplainGit._eval_(@uid,```@0```)
 
 @ExplainGit._eval_
-<iframe width=100% height=600px id="eval_@0"></iframe>
-<script>
-  const input = `@1`.replace(/\n/g, "|");
-
-  const url = 'https://kokokotlin.github.io/#' + input;
-
-  const frame = document.getElementById("eval_@0");
-  frame.contentWindow.location.reload(true);
-  frame.contentWindow.location.replace(url);
-
-  "LIA: stop"
-</script>
+  <explain-git>@1</explain-git>
 @end
 
 -->
@@ -61,11 +78,11 @@ Implementation of __ExplainGit with D3__ for LiaScript
 ## `@ExplainGit.eval`
 
 ``` text @ExplainGit.eval
-git commit
-git commit -m Hello World
-git branch dev
-git checkout dev
-git commit -m dev commit
-git checkout master
-git commit -m master commit
+git commit;
+git commit -m Hello World;
+git branch dev;
+git checkout dev;
+git commit -m dev commit;
+git checkout master;
+git commit -m master commit;
 ```

@@ -17,12 +17,15 @@ dark: true
 <iframe width=100% height=600px id="explain_@0"></iframe>
 
 <script>
-  const url = 'https://kokokotlin.github.io/';
+  function open() {
+    const url = 'https://kokokotlin.github.io/';
 
-  const frame = document.getElementById("explain_@0");
-  frame.contentWindow.location.reload(true);
-  frame.contentWindow.location.replace(url);
+    const frame = document.getElementById("explain_@0");
+    frame.contentWindow.location.reload(true);
+    frame.contentWindow.location.replace(url);
+  }
 
+  open();
   "LIA: stop"
 </script>
 @end
@@ -32,14 +35,17 @@ dark: true
 @ExplainGit._eval_
 <iframe width=100% height=600px id="eval_@0"></iframe>
 <script>
-  const input = `@1`.replace(/\n/g, "|");
+  function eval_() {
+    const input = `@1`.replace(/\n/g, "|");
 
-  const url = 'https://kokokotlin.github.io/#' + input;
+    const url = 'https://kokokotlin.github.io/#' + input;
 
-  const frame = document.getElementById("eval_@0");
-  frame.contentWindow.location.reload(true);
-  frame.contentWindow.location.replace(url);
+    const frame = document.getElementById("eval_@0");
+    frame.contentWindow.location.reload(true);
+    frame.contentWindow.location.replace(url)
+  }
 
+  eval_();
   "LIA: stop"
 </script>
 @end

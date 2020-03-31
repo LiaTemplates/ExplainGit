@@ -9,7 +9,7 @@ language: en
 
 narrator: US English Female
 
-dark: true
+dark: false
 
 @ExplainGit: @ExplainGit_(@uid,```@0```)
 
@@ -61,11 +61,27 @@ Implementation of __ExplainGit with D3__ for LiaScript
 [Original Website](https://onlywei.github.io/explain-git-with-d3/)
 
 ## `@ExplainGit`
+You can use the `@ExplainGit` macro to create a blank repository with only one initial commit.
+
 @ExplainGit
 
-## Test Seperator
-
 ## `@ExplainGit.eval`
+
+Or you can use the `@ExplainGit.eval` macro for preconfiguring your repository with git commands.
+
+<p style="color:green">__Example:__</p>
+
+```
+git commit
+git commit -m Hello World
+git branch dev
+git checkout dev
+git commit -m dev commit
+git checkout master
+git commit -m master commit
+```
+
+This code generates the repository below.
 
 ``` text @ExplainGit.eval
 git commit
@@ -76,7 +92,3 @@ git commit -m dev commit
 git checkout master
 git commit -m master commit
 ```
-
-## Test With text
-<div> Hello World</div>
-@ExplainGit

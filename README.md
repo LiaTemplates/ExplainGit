@@ -61,8 +61,9 @@ Implementation of __ExplainGit with D3__ for LiaScript
 [Original Website](https://onlywei.github.io/explain-git-with-d3/)
 
 ## `@ExplainGit`
-
 @ExplainGit
+
+## Test Seperator
 
 ## `@ExplainGit.eval`
 
@@ -75,3 +76,7 @@ git commit -m dev commit
 git checkout master
 git commit -m master commit
 ```
+
+## Test With text
+<div> Hello World</div>
+@ExplainGit

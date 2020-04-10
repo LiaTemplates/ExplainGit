@@ -60,7 +60,7 @@ Implementation of __ExplainGit with D3__ for LiaScript
 
 [Original Website](https://onlywei.github.io/explain-git-with-d3/)
 
-[LiaScirpt Page](https://liascript.github.io/course/?https://raw.githubusercontent.com/liaTemplates/ExplainGit/master/README.md#1)
+[LiaScript Page](https://liascript.github.io/course/?https://raw.githubusercontent.com/liaTemplates/ExplainGit/master/README.md#1)
 
 ## `@ExplainGit`
 You can use the `@ExplainGit` macro to create a blank repository with only one initial commit.

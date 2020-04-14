@@ -96,6 +96,7 @@ window.git = `<!DOCTYPE html>
 
       if(cmds.includes("create origin")) {
         gitHubJson["originData"] = [{id: 'e137e9b', tags: ['master'], message: 'first commit'}]
+        gitHubJson.commitData[0].tags = ["origin/master", "master"]
       }
 
       explainGit.open(gitHubJson);

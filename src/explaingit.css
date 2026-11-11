@@ -1,0 +1,267 @@
+/* ExplainGit for LiaScript, everything is scoped to the widget */
+
+.explaingit-widget {
+    margin: 1rem 0;
+}
+
+.explaingit-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+    font-size: 0.9em;
+}
+
+.explaingit-toolbar [hidden] {
+    display: none !important;
+}
+
+.explaingit-toolbar .explaingit-status {
+    opacity: 0.8;
+}
+
+.explaingit-toolbar button[aria-pressed="true"] {
+    font-weight: bold;
+}
+
+.explaingit {
+    position: relative;
+    height: 450px;
+    background-color: #FFF;
+    color: #000;
+    border: 1px solid #AAA;
+    container-type: inline-size;
+    overflow: hidden;
+}
+
+.explaingit-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+}
+
+.explaingit .playground-container {
+    position: absolute;
+    top: 0; bottom: 0; left: 0; right: 0;
+}
+
+.explaingit .control-box {
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: 250px;
+    background-color: #000;
+    border-right: 1px dotted #AAA;
+}
+
+.explaingit .control-box .log {
+    overflow-y: auto;
+    position: absolute;
+    top: 0; bottom: 24px; left: 0; right: 0;
+    border-bottom: 1px solid #AAA;
+}
+
+.explaingit .control-box .log,
+.explaingit .control-box input[type="text"] {
+    font-family: "Courier New", monospace;
+    font-size: 14px;
+}
+
+.explaingit .control-box .log .command-entry {
+    position: relative;
+    padding-left: 15px;
+    color: #FFF;
+    line-height: 16px;
+    word-break: break-word;
+}
+
+.explaingit .control-box .log .command-entry::before,
+.explaingit .control-box .prompt::before {
+    content: "$";
+    position: absolute;
+    left: 4px;
+    color: #9C9;
+}
+
+.explaingit .control-box .log .command-entry .who {
+    font-family: sans-serif;
+}
+
+.explaingit .control-box input[type="text"] {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    width: 100%;
+    height: 24px;
+    box-sizing: border-box;
+    padding: 0 4px 0 15px;
+    margin: 0;
+    border: none;
+    color: #FFF;
+    background-color: #000;
+}
+
+.explaingit .control-box input[type="text"]:focus {
+    outline: 2px solid #9C9;
+    outline-offset: -2px;
+}
+
+.explaingit .control-box .log .info,
+.explaingit .control-box .log .error {
+    font-size: 12px;
+    padding: 5px;
+}
+
+.explaingit .control-box .log .info {
+    color: #FFC;
+}
+
+.explaingit .control-box .log .error {
+    color: #FCC;
+}
+
+.explaingit .svg-container {
+    position: absolute;
+    top: 0; bottom: 0; right: 0; left: 250px;
+    overflow: auto;
+}
+
+.explaingit .svg-container.remote-container {
+    top: 0; right: 0; left: auto; bottom: auto;
+    background-color: #EFF1FF;
+    border-left: 1px dotted #AAA;
+    border-bottom: 1px dotted #AAA;
+    z-index: 1;
+}
+
+/* narrow screens: console on top, graph below */
+@container (max-width: 560px) {
+    .explaingit .control-box {
+        bottom: auto;
+        height: 150px;
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px dotted #AAA;
+    }
+
+    .explaingit .svg-container {
+        top: 150px;
+        left: 0;
+    }
+
+    .explaingit .svg-container.remote-container {
+        top: 150px;
+        width: 50%;
+    }
+}
+
+.explaingit text {
+    fill: #000;
+}
+
+.explaingit .remote-name-display {
+    font-weight: bold;
+}
+
+.explaingit circle.commit {
+    fill: #EEEEEE;
+    stroke: #888888;
+    stroke-width: 3;
+}
+
+.explaingit circle.commit.checked-out {
+    fill: #CCFFCC !important;
+    stroke: #339900;
+}
+
+.explaingit circle.commit.merge-commit {
+    stroke: #663300;
+    fill: #FFFFCC;
+}
+
+.explaingit circle.commit.reverted {
+    fill: #FFC;
+    stroke: #933;
+}
+
+.explaingit circle.commit.rebased {
+    stroke: #3300CC;
+    fill: #CCCCFF;
+}
+
+.explaingit circle.commit.branchless {
+    fill: #FEFEFE;
+    stroke: #DDD;
+}
+
+.explaingit .commit-pointer {
+    stroke: #666;
+    stroke-width: 4;
+}
+
+.explaingit .merge-pointer {
+    stroke: #663300;
+    stroke-width: 4;
+    fill: none;
+}
+
+.explaingit .commit-pointer.branchless,
+.explaingit .merge-pointer.branchless {
+    stroke: #DDD;
+    stroke-width: 2;
+}
+
+.explaingit text.id-label {
+    text-anchor: middle;
+    font-family: "Courier New", monospace;
+    font-weight: bolder;
+    fill: #666;
+    font-size: 10px;
+}
+
+.explaingit text.message-label {
+    text-anchor: middle;
+    font-family: "Courier New", monospace;
+    fill: #666;
+    font-size: 10px;
+}
+
+.explaingit g.branch-tag > rect {
+    fill: #FFCC66;
+    stroke: #CC9900;
+    stroke-width: 2;
+}
+
+.explaingit g.branch-tag.git-tag > rect {
+    fill: #7FC9FF;
+    stroke: #0026FF;
+}
+
+.explaingit g.branch-tag.remote-branch > rect {
+    fill: #CCC;
+    stroke: #888;
+}
+
+.explaingit g.branch-tag > text {
+    text-anchor: middle;
+    fill: #000;
+    font-size: 11px;
+    font-family: Arial, sans-serif;
+}
+
+.explaingit g.head-tag > rect {
+    fill: #CCFFCC;
+    stroke: #339900;
+    stroke-width: 2;
+}
+
+.explaingit g.head-tag > text {
+    text-anchor: middle;
+    fill: #000;
+    font-size: 11px;
+    font-family: Arial, sans-serif;
+    font-weight: bold;
+    text-transform: uppercase;
+}

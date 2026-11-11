@@ -2,6 +2,7 @@
 author:   Yannik Höll
 email:    labruzzler@gmail.com
 version:  0.1.0
+edit:     true
 language: en
 narrator: US English Female
 

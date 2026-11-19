@@ -11,12 +11,14 @@
     }
   },
   "scripts": {
-    "build": "parcel build src/index.js --no-cache"
+    "build": "parcel build src/index.js --no-cache",
+    "test": "node --test test/"
   },
   "devDependencies": {
     "@parcel/transformer-inline-string": "^2.16.4",
     "d3-selection": "^1.4.2",
     "d3-transition": "^1.3.2",
+    "jsdom": "^26.1.0",
     "parcel": "^2.16.4"
   }
 }

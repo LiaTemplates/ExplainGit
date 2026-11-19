@@ -420,21 +420,16 @@ function controlBoxFactory() {
                 throw new Error(tr('noUpstream'));
             }
 
-            setTimeout(function () {
-                try {
-                    if (args[0] === '--rebase' || control.rebaseConfig[currentBranch] === 'true') {
-                        isFastForward = local.rebase(rtBranch) === 'Fast-Forward';
-                    } else {
-                        isFastForward = local.merge(rtBranch) === 'Fast-Forward';
-                    }
-                } catch (error) {
-                    control.error(error.message);
-                }
+            // at once, not after a delay: replaying commands must give the same state
+            if (args[0] === '--rebase' || control.rebaseConfig[currentBranch] === 'true') {
+                isFastForward = local.rebase(rtBranch) === 'Fast-Forward';
+            } else {
+                isFastForward = local.merge(rtBranch) === 'Fast-Forward';
+            }
 
-                if (isFastForward) {
-                    control.info(tr('fastForwardTo', rtBranch));
-                }
-            }, 750);
+            if (isFastForward) {
+                control.info(tr('fastForwardTo', rtBranch));
+            }
         },
 
         push: function (args) {
@@ -484,6 +479,7 @@ function controlBoxFactory() {
                     commitToPush = {
                         id: localCommit.id,
                         parent: localCommit.parent,
+                        message: localCommit.message,
                         tags: []
                     };
 
@@ -1518,8 +1514,9 @@ function historyViewFactory(d3) {
             } else if (currentCommit.parent2 === mergeTarget.id) {
                 throw new Error(tr('upToDate'));
             } else if (noFF === true) {
-                var branchStartCommit = this.getCommit(mergeTarget.parent);
-                while (branchStartCommit.parent !== currentCommit.id) {
+                // the first commit of the merged branch: its parent is already in HEAD
+                var branchStartCommit = mergeTarget;
+                while (!this.isAncestor(branchStartCommit.parent, currentCommit)) {
                     branchStartCommit = this.getCommit(branchStartCommit.parent);
                 }
                 

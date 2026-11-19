@@ -76,6 +76,7 @@ class Widget {
     const plain = quiz ? null : parseCommands(text)
     this.setup = quiz ? quiz.setup : plain.cmds
     this.origin = quiz ? quiz.origin : plain.origin
+    this.init = quiz ? quiz.init : plain.init
     this.quiz = quiz
 
     root.innerHTML = ''
@@ -117,7 +118,7 @@ class Widget {
 
   rebuild(cmds, who) {
     if (this.box) this.box.destroy()
-    this.box = new Sandbox(this.area, this.id, { origin: this.origin, intro: tr('intro') })
+    this.box = new Sandbox(this.area, this.id, { origin: this.origin, init: this.init, intro: tr('intro') })
     this.box.cb.onInput = cmd => this.input(cmd)
     for (const cmd of this.setup) this.box.run(cmd)
     for (const cmd of cmds) this.box.run(cmd)
@@ -263,7 +264,7 @@ class Widget {
       this.rebuild(q.solution)
       return false
     }
-    const expected = simulate(q.setup.concat(q.solution), q.origin)
+    const expected = simulate(q.setup.concat(q.solution), q.origin, q.init)
     const problems = compare(snapshot(this.box), expected)
     if (problems.length) throw new Error(problems.join(' '))
     return true

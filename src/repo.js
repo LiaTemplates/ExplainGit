@@ -7,16 +7,20 @@ import { tr } from './i18n.js'
 // --- commands ----------------------------------------------------------------
 
 // one command per line, empty lines and # comments are skipped
+// `git init -b <name>` as the first command names the first branch
 export function parseCommands(text) {
   const cmds = []
   let origin = false
+  let init = 'master'
   for (let line of String(text || '').split(/\r?\n/)) {
     line = line.trim()
     if (!line || line.startsWith('#')) continue
+    const named = cmds.length === 0 && /^git init (?:-b |--initial-branch=)(\S+)$/.exec(line)
     if (line === 'create origin') origin = true
+    else if (named) init = named[1]
     else cmds.push(line)
   }
-  return { cmds, origin }
+  return { cmds, origin, init }
 }
 
 // quiz text: setup commands, a line of ---, solution commands
@@ -28,6 +32,7 @@ export function parseQuiz(text) {
   const l = parseCommands(solution)
   return {
     origin: s.origin || l.origin,
+    init: s.init !== 'master' ? s.init : l.init,
     setup: s.cmds,
     solution: l.cmds
   }

@@ -396,21 +396,45 @@ function controlBoxFactory() {
         },
 
         merge: function (args) {
-            var noFF = false;
-            var branch = args[0];
-            if (args.length === 2)
-            {
-                if (args[0] === '--no-ff') {
-                    noFF = true;
-                    branch = args[1];
-                } else if (args[1] === '--no-ff') {
-                    noFF = true;
-                    branch = args[0];
-                } else {
-                    this.info(tr('noFFOnly'));
+            var hv = this.historyView,
+                opt = {},
+                branch;
+
+            args.forEach(function (arg) {
+                if (arg === '--no-ff') {
+                    opt.noFF = true;
+                } else if (arg === '--ff-only') {
+                    opt.ffOnly = true;
+                } else if (arg === '--squash') {
+                    opt.squash = true;
+                } else if (arg.charAt(0) !== '-') {
+                    branch = arg;
                 }
+            });
+
+            if (!branch) {
+                throw new Error(tr('needRef'));
             }
-            var result = this.historyView.merge(branch, noFF);
+
+            if (opt.squash) {
+                var target = hv.getCommit(branch);
+                if (!target) {
+                    throw new Error(tr('noRef', branch));
+                }
+                if (hv.isAncestor(target, 'HEAD')) {
+                    throw new Error(tr('upToDate'));
+                }
+                // no commit yet: the next commit takes the changes, with one parent
+                hv.squashPending = target.id;
+                this.info(tr('squashed', branch));
+                return;
+            }
+
+            if (opt.ffOnly && hv.getCommit(branch) && !hv.isAncestor('HEAD', branch)) {
+                throw new Error(tr('notFastForward'));
+            }
+
+            var result = hv.merge(branch, opt.noFF);
 
             if (result === 'Fast-Forward') {
                 this.info(tr('fastForward'));
@@ -1134,6 +1158,9 @@ function historyViewFactory(d3) {
                 .classed('cherry-picked', function (d) {
                     return !!d.cherryPickedFrom;
                 })
+                .classed('squashed', function (d) {
+                    return !!d.squashOf;
+                })
                 .call(fixCirclePosition)
                 .attr('r', 1)
                 .transition("inflate")
@@ -1497,6 +1524,10 @@ function historyViewFactory(d3) {
             !commit.tags && (commit.tags = []);
 
             commit.message = message;
+            if (this.squashPending && !commit.parent2) {
+                commit.squashOf = this.squashPending;
+            }
+            this.squashPending = null;
             if (!commit.parent) {
                 if (!this.currentBranch) {
                     throw new Error(tr('detachedCommit'));

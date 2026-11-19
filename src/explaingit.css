@@ -196,6 +196,11 @@
     stroke-dasharray: 4 3;
 }
 
+.explaingit circle.commit.squashed {
+    stroke: #B15A00;
+    stroke-width: 5;
+}
+
 .explaingit circle.commit.branchless {
     fill: #FEFEFE;
     stroke: #DDD;

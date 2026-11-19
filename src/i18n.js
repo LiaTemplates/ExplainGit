@@ -79,6 +79,8 @@ const TEXT = {
     cherryPicked: (a, b) => `Copied ${a} as ${b}.`,
     alreadyInHead: r => `${r} is already part of HEAD.`,
     needRef: 'Name at least one commit.',
+    squashed: r => `Squashed ${r} – commit to finish.`,
+    notFastForward: 'Not possible to fast-forward, aborting.',
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -154,6 +156,8 @@ const TEXT = {
     cherryPicked: (a, b) => `${a} als ${b} kopiert.`,
     alreadyInHead: r => `${r} ist schon in HEAD enthalten.`,
     needRef: 'Gib mindestens einen Commit an.',
+    squashed: r => `${r} zusammengefasst – mit einem Commit abschließen.`,
+    notFastForward: 'Kein Fast-Forward möglich, abgebrochen.',
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -229,6 +233,8 @@ const TEXT = {
     cherryPicked: (a, b) => `${a} скопійовано як ${b}.`,
     alreadyInHead: r => `${r} вже входить до HEAD.`,
     needRef: 'Вкажіть принаймні один коміт.',
+    squashed: r => `${r} об’єднано в одне — завершіть комітом.`,
+    notFastForward: 'Fast-forward неможливий, скасовано.',
     upToDate: 'Уже актуально.'
   }
 }

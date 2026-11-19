@@ -32,3 +32,9 @@ test('stash on a clean tree only informs', () => {
   assert.equal(log.at(-1).kind, 'info'); assert.ok(!('stash@{0}' in viewInfo(box.hv).refs))
 })
 test('rejects pop without stash', () => assert.equal(run(['git stash pop']).log.at(-1).kind, 'error'))
+
+test('quiz feedback names a missing stash as stash', async () => {
+  const { compare, snapshot } = await import('./harness.mjs')
+  const msg = compare(run(['git commit']).state, run(['git commit', 'edit', 'git stash']).state).join(' ').replace(/[⁨⁩]/g, '')
+  assert.equal(msg, 'stash@{0} is missing.')
+})

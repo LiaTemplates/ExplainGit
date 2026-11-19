@@ -1206,7 +1206,8 @@ function historyViewFactory(d3) {
                 while (matchedCommit && steps-- > 0) {
                     matchedCommit = getCommit.call(this, matchedCommit.parent);
                 }
-                return matchedCommit;
+                // nothing comes before the first commit (git: unknown revision)
+                return matchedCommit && matchedCommit.id !== 'initial' ? matchedCommit : null;
             }
 
             for (var i = 0; i < commitData.length; i++) {

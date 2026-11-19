@@ -48,3 +48,11 @@ test('internal methods are not git commands', () => {
     assert.notEqual(box.hv.getCommit('HEAD').id, 'e137e9b', cmd)
   }
 })
+
+test('there is nothing before the first commit', () => {
+  for (const cmd of ['git reset --hard HEAD^', 'git checkout HEAD~1', 'git branch x HEAD^']) {
+    const { log, box } = run([cmd])
+    assert.equal(log.at(-1).kind, 'error', cmd)
+    assert.equal(viewInfo(box.hv).refs.master, 'e137e9b', cmd)
+  }
+})

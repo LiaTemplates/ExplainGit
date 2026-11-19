@@ -103,6 +103,7 @@ export class Sandbox {
 // --- comparing repositories --------------------------------------------------
 
 export function refLabel(name) {
+  if (name.startsWith('stash@{')) return name
   return /^\[.*\]$/.test(name) ? tr('tag', name.slice(1, -1)) : tr('branch', name)
 }
 

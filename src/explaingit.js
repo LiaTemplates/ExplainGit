@@ -249,6 +249,15 @@ function controlBoxFactory() {
             case '-f':
                 hv.forceBranch(rest[0], rest[1] || 'HEAD');
                 break;
+            case '-u':
+            case '--set-upstream-to':
+                var target = rest[1] || hv.currentBranch;
+                if (!rest[0] || !hv.getCommit(rest[0]) || !hv.isRemoteRef(rest[0])) {
+                    throw new Error(tr('noRef', rest[0]));
+                }
+                hv.upstream[target] = rest[0];
+                this.info(tr('upstreamSet', target, rest[0]));
+                break;
             default:
                 if (flag.charAt(0) === '-') {
                     this.error();
@@ -547,7 +556,7 @@ function controlBoxFactory() {
             }
         },
 
-        fetch: function () {
+        fetch: function (args) {
             if (!this.originView) {
                 throw new Error(tr('noRemote'));
             }
@@ -593,6 +602,8 @@ function controlBoxFactory() {
                 local.commitData.push({
                     id: fetchCommit.id,
                     parent: fetchCommit.parent,
+                    parent2: fetchCommit.parent2,
+                    message: fetchCommit.message,
                     tags: []
                 });
             }
@@ -607,6 +618,17 @@ function controlBoxFactory() {
                 resultMessage += tr('fetched', fetchBranches[fb], fb) + ' ';
             }
 
+            // --prune: drop origin/<b> when the remote has no <b> any more
+            if (args && (args.indexOf('--prune') > -1 || args.indexOf('-p') > -1)) {
+                local.branches.slice().forEach(function (b) {
+                    var m = remotePattern.exec(b);
+                    if (m && !origin.isLocalBranch(m[1])) {
+                        local._removeTag(b);
+                    }
+                });
+                local.renderTags();
+            }
+
             this.info(resultMessage);
 
             local.renderCommits();
@@ -616,7 +638,7 @@ function controlBoxFactory() {
             var control = this,
                 local = this.historyView,
                 currentBranch = local.currentBranch,
-                rtBranch = 'origin/' + currentBranch,
+                rtBranch = local.upstream[currentBranch] || 'origin/' + currentBranch,
                 isFastForward = false;
 
             this.fetch();
@@ -627,6 +649,10 @@ function controlBoxFactory() {
 
             if (local.branches.indexOf(rtBranch) === -1) {
                 throw new Error(tr('noUpstream'));
+            }
+
+            if (args.indexOf('--ff-only') > -1 && !local.isAncestor('HEAD', rtBranch) && !local.isAncestor(rtBranch, 'HEAD')) {
+                throw new Error(tr('notFastForward'));
             }
 
             // at once, not after a delay: replaying commands must give the same state
@@ -641,88 +667,107 @@ function controlBoxFactory() {
             }
         },
 
+        // push [-u] [-f | --force-with-lease] [--delete] [<remote> [<local>[:<remote>]]]
         push: function (args) {
-            var control = this,
-                local = this.historyView,
-                remoteName = args.shift() || 'origin',
+            var local = this.historyView,
+                opt = {},
+                positional = [];
+
+            args.forEach(function (arg) {
+                if (arg === '-u' || arg === '--set-upstream') {
+                    opt.upstream = true;
+                } else if (arg === '-f' || arg === '--force') {
+                    opt.force = true;
+                } else if (arg === '--force-with-lease') {
+                    opt.lease = true;
+                } else if (arg === '-d' || arg === '--delete') {
+                    opt.remove = true;
+                } else if (arg.charAt(0) !== '-') {
+                    positional.push(arg);
+                }
+            });
+
+            var remoteName = positional[0] || 'origin',
                 remote = this[remoteName + 'View'],
-                branchArgs = args.pop(),
-                localRef = local.currentBranch,
-                remoteRef = local.currentBranch,
-                localCommit, remoteCommit,
-                findCommitsToPush,
-                isCommonCommit,
-                toPush = [];
+                refspec = /^([^:]*)(:?)(.*)$/.exec(positional[1] || ''),
+                localRef = refspec[1] || local.currentBranch,
+                remoteRef = refspec[2] === ':' ? refspec[3] : localRef,
+                tracking = remoteName + '/' + remoteRef;
 
             if (remoteName === 'history') {
                 throw new Error(tr('remoteHistory'));
             }
-
             if (!remote) {
                 throw new Error(tr('noRemoteNamed', remoteName));
             }
 
-            if (branchArgs) {
-                branchArgs = /^([^:]*)(:?)(.*)$/.exec(branchArgs);
-
-                branchArgs[1] && (localRef = branchArgs[1]);
-                branchArgs[2] === ':' && (remoteRef = branchArgs[3]);
+            if (opt.remove) {
+                if (!remote.isLocalBranch(positional[1])) {
+                    throw new Error(tr('noRef', positional[1]));
+                }
+                remote._removeTag(positional[1]);
+                remote.renderCommits();
+                local._removeTag(remoteName + '/' + positional[1]);
+                local.renderTags();
+                return this.info(tr('remoteDeleted', positional[1]));
             }
 
-            if (local.branches.indexOf(localRef) === -1) {
+            if (!local.isLocalBranch(localRef)) {
                 throw new Error(tr('noLocalRef', localRef));
             }
-
             if (!remoteRef) {
                 throw new Error(tr('noRemoteBranch'));
             }
 
-            localCommit = local.getCommit(localRef);
-            remoteCommit = remote.getCommit(remoteRef);
+            var localCommit = local.getCommit(localRef),
+                remoteCommit = remote.isLocalBranch(remoteRef) ? remote.getCommit(remoteRef) : null;
 
-            findCommitsToPush = function findCommitsToPush(localCommit) {
-                var commitToPush,
-                    isCommonCommit = remote.getCommit(localCommit.id) !== null;
-
-                while (!isCommonCommit) {
-                    commitToPush = {
-                        id: localCommit.id,
-                        parent: localCommit.parent,
-                        message: localCommit.message,
-                        tags: []
-                    };
-
-                    if (typeof localCommit.parent2 === 'string') {
-                        commitToPush.parent2 = localCommit.parent2;
-                        findCommitsToPush(local.getCommit(localCommit.parent2));
+            if (remoteCommit && remoteCommit.id === localCommit.id) {
+                this.info(tr('upToDateAll'));
+            } else {
+                if (remoteCommit && !local.isAncestor(remoteCommit.id, localCommit.id)) {
+                    if (opt.lease) {
+                        // only if the remote is still where we last saw it
+                        var seen = local.getCommit(tracking);
+                        if (!seen || seen.id !== remoteCommit.id) {
+                            throw new Error(tr('staleLease'));
+                        }
+                    } else if (!opt.force) {
+                        throw new Error(tr('pushRejected'));
                     }
-
-                    toPush.unshift(commitToPush);
-                    localCommit = local.getCommit(localCommit.parent);
-                    isCommonCommit = remote.getCommit(localCommit.id) !== null;
-                }
-            };
-
-            // push to an existing branch on the remote
-            if (remoteCommit && remote.branches.indexOf(remoteRef) > -1) {
-                if (!local.isAncestor(remoteCommit.id, localCommit.id)) {
-                    throw new Error(tr('pushRejected'));
                 }
 
-                isCommonCommit = localCommit.id === remoteCommit.id;
-
-                if (isCommonCommit) {
-                    return this.info(tr('upToDateAll'));
-                }
-
-                findCommitsToPush(localCommit);
+                // copy the commits the remote does not have yet, parents first
+                var toPush = [],
+                    copy = function (commit) {
+                        while (commit && commit.id !== 'initial' && remote.getCommit(commit.id) === null &&
+                               toPush.every(function (c) { return c.id !== commit.id; })) {
+                            toPush.unshift({
+                                id: commit.id,
+                                parent: commit.parent,
+                                parent2: commit.parent2,
+                                message: commit.message,
+                                tags: []
+                            });
+                            if (typeof commit.parent2 === 'string') {
+                                copy(local.getCommit(commit.parent2));
+                            }
+                            commit = local.getCommit(commit.parent);
+                        }
+                    };
+                copy(localCommit);
 
                 remote.commitData = remote.commitData.concat(toPush);
-                remote.moveTag(remoteRef, toPush[toPush.length - 1].id);
+                remote.moveTag(remoteRef, localCommit.id);
                 remote.renderCommits();
-            } else {
-                this.info(tr('noNewRemoteBranch'));
             }
+
+            local.moveTag(tracking, localCommit.id);
+            if (opt.upstream) {
+                local.upstream[localRef] = tracking;
+                this.info(tr('upstreamSet', localRef, tracking));
+            }
+            local.renderTags();
         },
 
         config: function (args) {
@@ -994,6 +1039,7 @@ function historyViewFactory(d3) {
         this.remotes = config.remotes || ['origin'];
         this.status = 'clean'; // working tree: clean, staged or unstaged
         this.stashes = [];      // commit ids, newest first
+        this.upstream = {};     // branch -> remote tracking branch, set by push -u / branch -u
         this.remoteName = config.remoteName;
 
         this.initialCommit = {

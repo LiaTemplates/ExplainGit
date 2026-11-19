@@ -87,6 +87,9 @@ const TEXT = {
     stashSaved: n => `Saved working directory as stash@{${n}}.`,
     noLocalChanges: 'No local changes to save.',
     noStash: 'No stash entries found.',
+    staleLease: 'Rejected: the remote changed since your last fetch.',
+    remoteDeleted: b => `Deleted remote branch ${b}.`,
+    upstreamSet: (b, u) => `Branch ${b} tracks ${u}.`,
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -170,6 +173,9 @@ const TEXT = {
     stashSaved: n => `Arbeitsverzeichnis als stash@{${n}} gesichert.`,
     noLocalChanges: 'Keine Änderungen zum Sichern.',
     noStash: 'Keine Stash-Einträge vorhanden.',
+    staleLease: 'Abgelehnt: Der Remote hat sich seit dem letzten Fetch geändert.',
+    remoteDeleted: b => `Remote-Branch ${b} gelöscht.`,
+    upstreamSet: (b, u) => `Branch ${b} folgt ${u}.`,
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -253,6 +259,9 @@ const TEXT = {
     stashSaved: n => `Робочий каталог збережено як stash@{${n}}.`,
     noLocalChanges: 'Немає змін для збереження.',
     noStash: 'Записів stash немає.',
+    staleLease: 'Відхилено: віддалений репозиторій змінився після останнього fetch.',
+    remoteDeleted: b => `Віддалену гілку ${b} видалено.`,
+    upstreamSet: (b, u) => `Гілка ${b} відстежує ${u}.`,
     upToDate: 'Уже актуально.'
   }
 }

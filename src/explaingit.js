@@ -442,11 +442,34 @@ function controlBoxFactory() {
         },
 
         rebase: function (args) {
-            var ref = args.shift(),
-                result = this.historyView.rebase(ref);
+            var opt = {}, positional = [], ref, result;
 
+            while (args.length > 0) {
+                var arg = args.shift();
+                if (arg === '--onto') {
+                    opt.onto = args.shift();
+                    if (!opt.onto) {
+                        throw new Error(tr('needRef'));
+                    }
+                } else if (arg === '--update-refs') {
+                    opt.updateRefs = true;
+                } else if (arg.charAt(0) !== '-') {
+                    positional.push(arg);
+                }
+            }
+
+            ref = positional[0];
+            if (!ref) {
+                throw new Error(tr('needRef'));
+            }
+            // git rebase <upstream> <branch>: switch to <branch> first
+            if (positional[1]) {
+                this._changeBranch(positional[1], {});
+            }
+
+            result = this.historyView.rebase(ref, opt);
             if (result === 'Fast-Forward') {
-                this.info(tr('fastForwardTo', ref));
+                this.info(tr('fastForwardTo', opt.onto || ref));
             }
         },
 
@@ -1770,39 +1793,46 @@ function historyViewFactory(d3) {
             }
         },
 
-        rebase: function (ref) {
-            var rebaseTarget = this.getCommit(ref),
+        // opt.onto: new base instead of ref; opt.updateRefs: move branches on rebased commits too
+        rebase: function (ref, opt) {
+            opt = opt || {};
+            var upstream = this.getCommit(ref),
+                base = opt.onto ? this.getCommit(opt.onto) : upstream,
                 currentCommit = this.getCommit('HEAD'),
-                isCommonAncestor,
                 rebaseTreeLoc,
                 rebaseMessage,
                 toRebase = [], rebasedCommit,
                 remainingHusk;
 
-            if (!rebaseTarget) {
+            if (!upstream) {
                 throw new Error(tr('noRef', ref));
             }
-
-            if (currentCommit.id === rebaseTarget.id) {
-                throw new Error(tr('upToDate'));
-            } else if (currentCommit.parent2 === rebaseTarget.id) {
-                throw new Error(tr('upToDate'));
+            if (!base) {
+                throw new Error(tr('noRef', opt.onto));
             }
 
-            isCommonAncestor = this.isAncestor(currentCommit, rebaseTarget);
+            if (!opt.onto) {
+                if (currentCommit.id === upstream.id || currentCommit.parent2 === upstream.id) {
+                    throw new Error(tr('upToDate'));
+                }
+                if (this.isAncestor(currentCommit, upstream)) {
+                    this.fastForward(upstream);
+                    return 'Fast-Forward';
+                }
+            }
 
-            if (isCommonAncestor) {
-                this.fastForward(rebaseTarget);
+            // the commits of HEAD that upstream does not have, oldest first
+            while (currentCommit && currentCommit.id !== 'initial' && !this.isAncestor(currentCommit, upstream)) {
+                toRebase.unshift(currentCommit);
+                currentCommit = this.getCommit(currentCommit.parent);
+            }
+
+            if (toRebase.length === 0) {
+                this.fastForward(base);
                 return 'Fast-Forward';
             }
 
-            rebaseTreeLoc = rebaseTarget.id;
-
-            while (!isCommonAncestor) {
-                toRebase.unshift(currentCommit);
-                currentCommit = this.getCommit(currentCommit.parent);
-                isCommonAncestor = this.isAncestor(currentCommit, rebaseTarget);
-            }
+            rebaseTreeLoc = base.id;
 
             for (var i = 0; i < toRebase.length; i++) {
                 rebasedCommit = toRebase[i];
@@ -1815,9 +1845,15 @@ function historyViewFactory(d3) {
                     tags: []
                 };
 
+                var moved = [];
                 for (var t = 0; t < rebasedCommit.tags.length; t++) {
                     var tagName = rebasedCommit.tags[t];
-                    if (tagName !== this.currentBranch && tagName !== 'HEAD') {
+                    if (tagName === this.currentBranch || tagName === 'HEAD') {
+                        continue;
+                    }
+                    if (opt.updateRefs && this.isLocalBranch(tagName)) {
+                        moved.push(tagName);
+                    } else {
                         remainingHusk.tags.unshift(tagName);
                     }
                 }
@@ -1829,6 +1865,7 @@ function historyViewFactory(d3) {
                 rebasedCommit.id = rebaseTreeLoc;
                 rebasedCommit.message = rebaseMessage;
                 rebasedCommit.tags.length = 0;
+                Array.prototype.push.apply(rebasedCommit.tags, moved);
                 rebasedCommit.rebased = true;
             }
 

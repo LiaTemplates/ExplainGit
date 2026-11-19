@@ -10,6 +10,7 @@ export const SCRIPTS = [
   { name: 'commit', cmds: ['git commit -m one', 'git commit --amend -m two', 'git commit -am three', 'git commit --allow-empty'] },
   { name: 'cherry-pick', cmds: ['git switch -c dev', 'git commit -m a', 'git commit -m b', 'git switch master', 'git cherry-pick dev^ dev'] },
   { name: 'merge --squash', cmds: ['git switch -c dev', 'git commit', 'git commit', 'git switch master', 'git merge --squash dev', 'git commit -m all'] },
+  { name: 'rebase', cmds: ['git switch -c t1', 'git commit -m B', 'git switch -c t2', 'git commit -m C', 'git switch master', 'git commit -m M', 'git switch t2', 'git rebase --update-refs master', 'git rebase --onto master t1 t2'] },
 ]
 
 for (const { name, cmds, opts } of SCRIPTS)

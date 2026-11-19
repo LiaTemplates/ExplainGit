@@ -8,6 +8,7 @@ export const SCRIPTS = [
   { name: 'switch', cmds: ['git switch -c dev', 'git commit', 'git switch -', 'git switch --detach HEAD', 'git checkout -b x HEAD^'] },
   { name: 'branch', cmds: ['git switch -c feature/x', 'git commit', 'git branch -m feature/y', 'git branch -c feature/y copy', 'git branch -f copy HEAD^'] },
   { name: 'commit', cmds: ['git commit -m one', 'git commit --amend -m two', 'git commit -am three', 'git commit --allow-empty'] },
+  { name: 'cherry-pick', cmds: ['git switch -c dev', 'git commit -m a', 'git commit -m b', 'git switch master', 'git cherry-pick dev^ dev'] },
 ]
 
 for (const { name, cmds, opts } of SCRIPTS)

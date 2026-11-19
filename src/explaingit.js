@@ -378,6 +378,19 @@ function controlBoxFactory() {
             this.info(tr('clean'));
         },
 
+        'cherry-pick': function (args) {
+            var hv = this.historyView,
+                refs = args.filter(function (a) { return a.charAt(0) !== '-'; });
+
+            if (refs.length === 0) {
+                throw new Error(tr('needRef'));
+            }
+            for (var i = 0; i < refs.length; i++) {
+                var source = hv.cherryPick(refs[i]);
+                this.info(tr('cherryPicked', source.id, hv.getCommit('HEAD').id));
+            }
+        },
+
         revert: function (args) {
             this.historyView.revert(args.shift());
         },
@@ -883,6 +896,12 @@ function historyViewFactory(d3) {
                 h ^= str.charCodeAt(i);
                 h = Math.imul(h, 0x01000193) >>> 0;
             }
+            // final mix (murmur3), so neighbouring counters give unlike ids
+            h ^= h >>> 16;
+            h = Math.imul(h, 0x85ebca6b) >>> 0;
+            h ^= h >>> 13;
+            h = Math.imul(h, 0xc2b2ae35) >>> 0;
+            h ^= h >>> 16;
             return ('0000000' + h.toString(16)).slice(-7);
         },
 
@@ -893,15 +912,24 @@ function historyViewFactory(d3) {
          */
         getCommit: function getCommit(ref) {
             var commitData = this.commitData,
-                headMatcher = /HEAD(\^+)/.exec(ref),
+                // <ref>^, <ref>^^, <ref>~2, combined: walk first parents
+                suffix = typeof ref === 'string' && /^(.+?)((?:\^|~\d*)+)$/.exec(ref),
                 matchedCommit = null;
 
             if (ref === 'initial') {
                 return this.initialCommit;
             }
 
-            if (headMatcher) {
-                ref = 'HEAD';
+            if (suffix) {
+                var steps = 0;
+                suffix[2].replace(/\^|~(\d*)/g, function (op, n) {
+                    steps += op === '^' ? 1 : Number(n || 1);
+                });
+                matchedCommit = getCommit.call(this, suffix[1]);
+                while (matchedCommit && steps-- > 0) {
+                    matchedCommit = getCommit.call(this, matchedCommit.parent);
+                }
+                return matchedCommit;
             }
 
             for (var i = 0; i < commitData.length; i++) {
@@ -935,12 +963,6 @@ function historyViewFactory(d3) {
                 }();
                 if (matchedTag === true) {
                     break;
-                }
-            }
-
-            if (headMatcher && matchedCommit) {
-                for (var h = 0; h < headMatcher[1].length; h++) {
-                    matchedCommit = getCommit.call(this, matchedCommit.parent);
                 }
             }
 
@@ -1108,6 +1130,9 @@ function historyViewFactory(d3) {
                 .classed('commit', true)
                 .classed('merge-commit', function (d) {
                     return typeof d.parent2 === 'string';
+                })
+                .classed('cherry-picked', function (d) {
+                    return !!d.cherryPickedFrom;
                 })
                 .call(fixCirclePosition)
                 .attr('r', 1)
@@ -1432,6 +1457,20 @@ function historyViewFactory(d3) {
             }
 
             return inTree;
+        },
+
+        // copies one commit onto HEAD, returns the copied (source) commit
+        cherryPick: function (ref) {
+            var source = this.getCommit(ref);
+
+            if (!source || source.id === 'initial') {
+                throw new Error(tr('noRef', ref));
+            }
+            if (this.isAncestor(source, 'HEAD')) {
+                throw new Error(tr('alreadyInHead', ref));
+            }
+            this.commit({ cherryPickedFrom: source.id }, source.message);
+            return source;
         },
 
         // a new commit with the parents of HEAD; the old one is no longer reachable

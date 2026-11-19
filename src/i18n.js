@@ -76,6 +76,9 @@ const TEXT = {
     branchRenamed: (a, b) => `Renamed ${a} to ${b}.`,
     cannotForceCurrent: n => `Cannot force update the current branch ${n}.`,
     amendRoot: 'Cannot amend the initial commit in this demo.',
+    cherryPicked: (a, b) => `Copied ${a} as ${b}.`,
+    alreadyInHead: r => `${r} is already part of HEAD.`,
+    needRef: 'Name at least one commit.',
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -148,6 +151,9 @@ const TEXT = {
     branchRenamed: (a, b) => `${a} heißt jetzt ${b}.`,
     cannotForceCurrent: n => `Der aktuelle Branch ${n} kann nicht versetzt werden.`,
     amendRoot: 'Den ersten Commit kann diese Demo nicht ersetzen.',
+    cherryPicked: (a, b) => `${a} als ${b} kopiert.`,
+    alreadyInHead: r => `${r} ist schon in HEAD enthalten.`,
+    needRef: 'Gib mindestens einen Commit an.',
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -220,6 +226,9 @@ const TEXT = {
     branchRenamed: (a, b) => `Гілку ${a} перейменовано на ${b}.`,
     cannotForceCurrent: n => `Не можна примусово перемістити поточну гілку ${n}.`,
     amendRoot: 'Ця демонстрація не може змінити початковий коміт.',
+    cherryPicked: (a, b) => `${a} скопійовано як ${b}.`,
+    alreadyInHead: r => `${r} вже входить до HEAD.`,
+    needRef: 'Вкажіть принаймні один коміт.',
     upToDate: 'Уже актуально.'
   }
 }

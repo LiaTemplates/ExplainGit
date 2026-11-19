@@ -191,6 +191,11 @@
     fill: #CCCCFF;
 }
 
+.explaingit circle.commit.cherry-picked {
+    stroke: #7A3EB1;
+    stroke-dasharray: 4 3;
+}
+
 .explaingit circle.commit.branchless {
     fill: #FEFEFE;
     stroke: #DDD;

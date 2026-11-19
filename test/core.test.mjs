@@ -27,3 +27,16 @@ test('pushed commits keep their message', () => {
   const { box } = run(['git commit -m hello', 'git push'], { origin: true })
   assert.ok(box.ov.commitData.some(c => c.message === 'hello'))
 })
+
+test('refs with ^ and ~N', () => {
+  const { box } = run(['git commit -m a', 'git commit -m b', 'git commit -m c', 'git branch dev'])
+  assert.equal(box.hv.getCommit('dev^').message, 'b')
+  assert.equal(box.hv.getCommit('HEAD~2').message, 'a')
+  assert.equal(box.hv.getCommit('master~1^').message, 'a')
+  assert.equal(box.hv.getCommit('HEAD^^').message, 'a')
+})
+
+test('commit ids look like hashes, not a counter', () => {
+  const ids = run(['git commit', 'git commit', 'git commit', 'git commit', 'git commit']).box.hv.commitData.slice(1).map(c => c.id)
+  assert.equal(new Set(ids.map(id => id.slice(1, 4))).size, ids.length)
+})

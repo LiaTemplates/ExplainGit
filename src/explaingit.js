@@ -196,38 +196,53 @@ function controlBoxFactory() {
         },
 
         branch: function (args) {
-            if (args.length < 1) {
+            var hv = this.historyView,
+                flag = args[0],
+                rest = args.slice(1);
+
+            // -m/-c with one name work on the current branch
+            var pair = function () {
+                return rest.length > 1 ? [rest[0], rest[1]] : [hv.currentBranch, rest[0]];
+            };
+
+            switch (flag) {
+            case undefined:
                 this.info(tr('branchList'));
-
-                return;
-            }
-
-            while (args.length > 0) {
-                var arg = args.shift();
-
-                switch (arg) {
-                case '--remote':
-                case '-r':
-                    this.info(tr('branchRemote'));
-                    args.length = 0;
-                    break;
-                case '--all':
-                case '-a':
-                    this.info(tr('branchAll'));
-                    break;
-                case '--delete':
-                case '-d':
-                    var name = args.pop();
-                    this.historyView.deleteBranch(name);
-                    break;
-                default:
-                    if (arg.charAt(0) === '-') {
-                        this.error();
-                    } else {
-                        var remainingArgs = [arg].concat(args);
-                        args.length = 0;
-                        this.historyView.branch(remainingArgs.join(' '));
-                    }
+                break;
+            case '--remote':
+            case '-r':
+                this.info(tr('branchRemote'));
+                break;
+            case '--all':
+            case '-a':
+                this.info(tr('branchAll'));
+                break;
+            case '--delete':
+            case '-d':
+            case '-D':
+                hv.deleteBranch(rest[0]);
+                break;
+            case '--move':
+            case '-m':
+            case '-M':
+                var names = pair();
+                hv.renameBranch(names[0], names[1], flag === '-M');
+                this.info(tr('branchRenamed', names[0], names[1]));
+                break;
+            case '--copy':
+            case '-c':
+            case '-C':
+                hv.copyBranch(pair()[0], pair()[1], flag === '-C');
+                break;
+            case '--force':
+            case '-f':
+                hv.forceBranch(rest[0], rest[1] || 'HEAD');
+                break;
+            default:
+                if (flag.charAt(0) === '-') {
+                    this.error();
+                } else {
+                    hv.branch(flag, rest[0]);
                 }
             }
         },
@@ -401,7 +416,7 @@ function controlBoxFactory() {
 
             var origin = this.originView,
                 local = this.historyView,
-                remotePattern = /^origin\/([^\/]+)$/,
+                remotePattern = /^origin\/(.+)$/,
                 rtb, isRTB, fb,
                 fetchBranches = {},
                 fetchIds = [], // just to make sure we don't fetch the same commit twice
@@ -838,6 +853,7 @@ function historyViewFactory(d3) {
         this.pointerMargin = this.commitRadius * 1.3;
 
         this.isRemote = typeof config.remoteName === 'string';
+        this.remotes = config.remotes || ['origin'];
         this.remoteName = config.remoteName;
 
         this.initialCommit = {
@@ -1244,7 +1260,7 @@ function historyViewFactory(d3) {
 
             for (b = 0; b < this.branches.length; b++) {
                 branch = this.branches[b];
-                if (branch.indexOf('/') === -1) {
+                if (!this.isRemoteRef(branch)) {
                     commit = this.getCommit(branch);
                     parent = this.getCommit(commit.parent);
                     parent2 = this.getCommit(commit.parent2);
@@ -1305,7 +1321,7 @@ function historyViewFactory(d3) {
                     var classes = 'branch-tag';
                     if (d.name.indexOf('[') === 0 && d.name.indexOf(']') === d.name.length - 1) {
                         classes += ' git-tag';
-                    } else if (d.name.indexOf('/') >= 0) {
+                    } else if (view.isRemoteRef(d.name)) {
                         classes += ' remote-branch';
                     } else if (d.name.toUpperCase() === 'HEAD') {
                         classes += ' head-tag';
@@ -1351,7 +1367,7 @@ function historyViewFactory(d3) {
                 this.previousBranch = this.currentBranch;
             }
 
-            if (branch && branch.indexOf('/') === -1) {
+            if (branch && !this.isRemoteRef(branch)) {
                 text = tr('currentBranch', branch);
                 this.currentBranch = branch;
             } else {
@@ -1438,15 +1454,20 @@ function historyViewFactory(d3) {
             return this;
         },
 
+        // remote tracking branches look like <remote>/<branch>; feature/login is local
+        isRemoteRef: function (name) {
+            return !this.isRemote && this.remotes.some(function (r) { return name.indexOf(r + '/') === 0; });
+        },
+
         // from the commits, not from this.branches: that list is filled only when tags are drawn
         isLocalBranch: function (name) {
-            if (!name || name === 'HEAD' || name.indexOf('/') > -1 || name.charAt(0) === '[') {
+            if (!name || name === 'HEAD' || this.isRemoteRef(name) || name.charAt(0) === '[') {
                 return false;
             }
             return this.commitData.some(function (c) { return c.tags.indexOf(name) > -1; });
         },
 
-        branch: function (name, start) {
+        _checkNewName: function (name, force) {
             if (!name || name.trim() === '') {
                 throw new Error(tr('needBranchName'));
             }
@@ -1459,10 +1480,69 @@ function historyViewFactory(d3) {
                 throw new Error(tr('branchSpaces'));
             }
 
-            if (this.branches.indexOf(name) > -1) {
+            if (this.branches.indexOf(name) > -1 && !force) {
                 var exists = new Error(tr('branchExists', name));
                 exists.code = 'exists';
                 throw exists;
+            }
+        },
+
+        _removeTag: function (name) {
+            var commit = this.getCommit(name);
+            if (commit && commit.tags.indexOf(name) > -1) {
+                commit.tags.splice(commit.tags.indexOf(name), 1);
+            }
+            if (this.branches.indexOf(name) > -1) {
+                this.branches.splice(this.branches.indexOf(name), 1);
+            }
+        },
+
+        renameBranch: function (old, name, force) {
+            if (!this.isLocalBranch(old)) {
+                throw new Error(tr('noBranch'));
+            }
+            this._checkNewName(name, force);
+            if (name !== old) {
+                this._removeTag(name);
+            }
+            var commit = this.getCommit(old);
+            commit.tags[commit.tags.indexOf(old)] = name;
+            this.branches.splice(this.branches.indexOf(old), 1);
+            if (this.currentBranch === old) {
+                this.currentBranch = name;
+                this._setCurrentBranch(name);
+            }
+            this.renderTags();
+        },
+
+        copyBranch: function (old, name, force) {
+            if (!this.isLocalBranch(old)) {
+                throw new Error(tr('noBranch'));
+            }
+            this._checkNewName(name, force);
+            this._removeTag(name);
+            this.getCommit(old).tags.push(name);
+            this.renderTags();
+        },
+
+        forceBranch: function (name, ref) {
+            var target = this.getCommit(ref);
+            if (name === this.currentBranch) {
+                throw new Error(tr('cannotForceCurrent', name));
+            }
+            if (!target) {
+                throw new Error(tr('noRef', ref));
+            }
+            this._checkNewName(name, true);
+            this._removeTag(name);
+            target.tags.push(name);
+            this.renderTags();
+        },
+
+        branch: function (name, start) {
+            this._checkNewName(name);
+            if (start && !this.getCommit(start)) {
+                throw new Error(tr('noRef', start));
             }
 
             this.getCommit(start || 'HEAD').tags.push(name);

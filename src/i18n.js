@@ -73,6 +73,8 @@ const TEXT = {
     branchExpected: r => `a branch is expected, got commit '${r}'.`,
     noPrevious: 'There is no previous branch.',
     switchUsage: 'Usage: git switch [-c <new-branch>] [--detach] <branch>',
+    branchRenamed: (a, b) => `Renamed ${a} to ${b}.`,
+    cannotForceCurrent: n => `Cannot force update the current branch ${n}.`,
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -142,6 +144,8 @@ const TEXT = {
     branchExpected: r => `Ein Branch wird erwartet, „${r}“ ist ein Commit (mit --detach umschalten).`,
     noPrevious: 'Es gibt keinen vorherigen Branch.',
     switchUsage: 'Aufruf: git switch [-c <neuer-branch>] [--detach] <branch>',
+    branchRenamed: (a, b) => `${a} heißt jetzt ${b}.`,
+    cannotForceCurrent: n => `Der aktuelle Branch ${n} kann nicht versetzt werden.`,
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -211,6 +215,8 @@ const TEXT = {
     branchExpected: r => `Очікується гілка, а «${r}» — це коміт (використайте --detach).`,
     noPrevious: 'Попередньої гілки немає.',
     switchUsage: 'Використання: git switch [-c <нова-гілка>] [--detach] <гілка>',
+    branchRenamed: (a, b) => `Гілку ${a} перейменовано на ${b}.`,
+    cannotForceCurrent: n => `Не можна примусово перемістити поточну гілку ${n}.`,
     upToDate: 'Уже актуально.'
   }
 }

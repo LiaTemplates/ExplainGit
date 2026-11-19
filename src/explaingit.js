@@ -147,6 +147,13 @@ function controlBoxFactory() {
 
             this._scrollToBottom();
 
+            if (split[0] === 'edit') {
+                if (this.historyView.status === 'clean') {
+                    this.historyView.setStatus('unstaged');
+                }
+                return this.info(tr('edited'));
+            }
+
             if (split[0] !== 'git') {
                 return this.error();
             }
@@ -350,28 +357,58 @@ function controlBoxFactory() {
             }
         },
 
+        // --soft keeps the undone changes staged, --mixed (default) unstaged, --hard drops them
         reset: function (args) {
-            while (args.length > 0) {
-                var arg = args.shift();
+            var hv = this.historyView,
+                mode = 'mixed',
+                ref = 'HEAD';
 
-                switch (arg) {
-                case '--soft':
-                    this.info(tr('resetSoft'));
-                    break;
-                case '--mixed':
-                    this.info(tr('resetMixed'));
-                    break;
-                case '--hard':
-                    this.historyView.reset(args.join(' '));
-                    args.length = 0;
-                    break;
-                default:
-                    var remainingArgs = [arg].concat(args);
-                    args.length = 0;
-                    this.info(tr('resetHard'));
-                    this.historyView.reset(remainingArgs.join(' '));
+            args.forEach(function (arg) {
+                if (arg === '--soft' || arg === '--mixed' || arg === '--hard') {
+                    mode = arg.slice(2);
+                } else if (arg.charAt(0) !== '-') {
+                    ref = arg;
                 }
+            });
+
+            var before = hv.getCommit('HEAD').id;
+            hv.reset(ref);
+            var moved = hv.getCommit('HEAD').id !== before;
+
+            if (mode === 'hard') {
+                hv.setStatus('clean');
+            } else if (mode === 'soft') {
+                moved && hv.setStatus('staged');
+            } else if (moved || hv.status !== 'clean') {
+                hv.setStatus('unstaged');
             }
+        },
+
+        add: function (args) {
+            if (args.length === 0) {
+                throw new Error(tr('needPath'));
+            }
+            if (this.historyView.status === 'unstaged') {
+                this.historyView.setStatus('staged');
+            }
+        },
+
+        restore: function (args) {
+            var hv = this.historyView,
+                staged = args.indexOf('--staged') > -1 || args.indexOf('-S') > -1;
+
+            if (!args.some(function (a) { return a.charAt(0) !== '-'; })) {
+                throw new Error(tr('needPath'));
+            }
+            if (staged && hv.status === 'staged') {
+                hv.setStatus('unstaged');
+            } else if (!staged && hv.status === 'unstaged') {
+                hv.setStatus('clean');
+            }
+        },
+
+        status: function () {
+            this.info(tr('status_' + this.historyView.status));
         },
 
         clean: function (args) {
@@ -426,6 +463,7 @@ function controlBoxFactory() {
                 }
                 // no commit yet: the next commit takes the changes, with one parent
                 hv.squashPending = target.id;
+                hv.setStatus('staged');
                 this.info(tr('squashed', branch));
                 return;
             }
@@ -918,6 +956,7 @@ function historyViewFactory(d3) {
 
         this.isRemote = typeof config.remoteName === 'string';
         this.remotes = config.remotes || ['origin'];
+        this.status = 'clean'; // working tree: clean, staged or unstaged
         this.remoteName = config.remoteName;
 
         this.initialCommit = {
@@ -1076,6 +1115,11 @@ function historyViewFactory(d3) {
                     .classed('current-branch-display', true)
                     .attr('x', 10)
                     .attr('y', 45);
+
+                svg.append('svg:text')
+                    .classed('status-display', true)
+                    .attr('x', 10)
+                    .attr('y', 65);
             }
 
             this.svgContainer = svgContainer;
@@ -1087,6 +1131,7 @@ function historyViewFactory(d3) {
             this.renderCommits();
 
             this._setCurrentBranch(this.currentBranch);
+            this.setStatus(this.status);
         },
 
         destroy: function () {
@@ -1438,6 +1483,13 @@ function historyViewFactory(d3) {
             this._markBranchlessCommits();
         },
 
+        setStatus: function (status) {
+            this.status = status;
+            if (this.svg) {
+                this.svg.select('text.status-display').text(tr('status_' + status));
+            }
+        },
+
         _setCurrentBranch: function (branch) {
             var display = this.svg.select('text.current-branch-display'),
                 text;
@@ -1565,6 +1617,7 @@ function historyViewFactory(d3) {
             this.renderCommits();
 
             this.checkout(this.currentBranch);
+            this.setStatus('clean');
             return this;
         },
 

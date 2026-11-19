@@ -118,7 +118,8 @@ export function viewInfo(hv) {
     byId,
     refs,
     branch: hv.currentBranch,
-    head: headCommit ? headCommit.id : null
+    head: headCommit ? headCommit.id : null,
+    status: hv.status || 'clean'
   }
 }
 
@@ -177,6 +178,8 @@ export function compare(actual, expected) {
     }
   }
   if (problems.length) return problems
+
+  if (actual[0][1].status !== expected[0][1].status) return [tr('wrongStatus')]
 
   if (encode(starts(actual)) !== encode(starts(expected))) {
     const a = actual[0][1]

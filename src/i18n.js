@@ -42,9 +42,6 @@ const TEXT = {
     branchRemote: 'This command normally displays all of your remote tracking branches.',
     branchAll: 'This command normally displays all of your tracking branches, both remote and local.',
     tagList: "You need to give a tag name. Normally if you don't give a name, this command will list your local tags on the screen.",
-    resetSoft: 'The "--soft" flag works in real git, but I am unable to show you how it works in this demo. So I am just going to show you what "--hard" looks like instead.',
-    resetMixed: 'The "--mixed" flag works in real git, but I am unable to show you how it works in this demo.',
-    resetHard: 'Assuming "--hard".',
     clean: 'Deleting all of your untracked files...',
     noFFOnly: 'This demo only supports the --no-ff switch.',
     fastForward: 'You have performed a fast-forward merge.',
@@ -81,6 +78,12 @@ const TEXT = {
     needRef: 'Name at least one commit.',
     squashed: r => `Squashed ${r} – commit to finish.`,
     notFastForward: 'Not possible to fast-forward, aborting.',
+    status_clean: 'Working tree: clean',
+    status_staged: 'Working tree: changes staged',
+    status_unstaged: 'Working tree: changes not staged',
+    edited: 'You changed a file.',
+    needPath: 'Name a path, e.g. a dot for everything.',
+    wrongStatus: 'The working tree is not in the right state yet.',
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -119,9 +122,6 @@ const TEXT = {
     branchRemote: 'Dieser Befehl zeigt normalerweise alle Remote-Tracking-Branches an.',
     branchAll: 'Dieser Befehl zeigt normalerweise alle Tracking-Branches an, lokale und entfernte.',
     tagList: 'Gib einen Tag-Namen an. Ohne Namen listet dieser Befehl normalerweise deine lokalen Tags auf.',
-    resetSoft: 'Die Option „--soft“ gibt es in echtem Git, diese Demo kann sie aber nicht zeigen. Stattdessen siehst du, wie „--hard“ aussieht.',
-    resetMixed: 'Die Option „--mixed“ gibt es in echtem Git, diese Demo kann sie aber nicht zeigen.',
-    resetHard: 'Ich nehme „--hard“ an.',
     clean: 'Alle nicht versionierten Dateien werden gelöscht …',
     noFFOnly: 'Diese Demo unterstützt nur die Option --no-ff.',
     fastForward: 'Das war ein Fast-Forward-Merge.',
@@ -158,6 +158,12 @@ const TEXT = {
     needRef: 'Gib mindestens einen Commit an.',
     squashed: r => `${r} zusammengefasst – mit einem Commit abschließen.`,
     notFastForward: 'Kein Fast-Forward möglich, abgebrochen.',
+    status_clean: 'Arbeitsverzeichnis: sauber',
+    status_staged: 'Arbeitsverzeichnis: Änderungen vorgemerkt',
+    status_unstaged: 'Arbeitsverzeichnis: Änderungen nicht vorgemerkt',
+    edited: 'Du hast eine Datei geändert.',
+    needPath: 'Gib einen Pfad an, z. B. einen Punkt für alles.',
+    wrongStatus: 'Das Arbeitsverzeichnis ist noch nicht im richtigen Zustand.',
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -196,9 +202,6 @@ const TEXT = {
     branchRemote: 'Ця команда зазвичай показує всі гілки віддаленого відстеження.',
     branchAll: 'Ця команда зазвичай показує всі гілки відстеження, локальні й віддалені.',
     tagList: 'Вкажіть назву тегу. Без назви ця команда зазвичай показує ваші локальні теги.',
-    resetSoft: 'Параметр «--soft» працює у справжньому git, але ця демонстрація не може його показати. Натомість ви побачите, як виглядає «--hard».',
-    resetMixed: 'Параметр «--mixed» працює у справжньому git, але ця демонстрація не може його показати.',
-    resetHard: 'Припускаю «--hard».',
     clean: 'Видалення всіх невідстежуваних файлів…',
     noFFOnly: 'Ця демонстрація підтримує лише параметр --no-ff.',
     fastForward: 'Ви виконали fast-forward злиття.',
@@ -235,6 +238,12 @@ const TEXT = {
     needRef: 'Вкажіть принаймні один коміт.',
     squashed: r => `${r} об’єднано в одне — завершіть комітом.`,
     notFastForward: 'Fast-forward неможливий, скасовано.',
+    status_clean: 'Робочий каталог: чисто',
+    status_staged: 'Робочий каталог: зміни додано до індексу',
+    status_unstaged: 'Робочий каталог: зміни не додано до індексу',
+    edited: 'Ви змінили файл.',
+    needPath: 'Вкажіть шлях, наприклад крапку для всього.',
+    wrongStatus: 'Робочий каталог ще не в потрібному стані.',
     upToDate: 'Уже актуально.'
   }
 }

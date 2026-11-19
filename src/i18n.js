@@ -70,6 +70,9 @@ const TEXT = {
     noCommit: r => `Cannot find commit: ${r}`,
     noRef: r => `Cannot find ref: ${r}`,
     notAncestor: r => `${r} is not an ancestor of HEAD.`,
+    branchExpected: r => `a branch is expected, got commit '${r}'.`,
+    noPrevious: 'There is no previous branch.',
+    switchUsage: 'Usage: git switch [-c <new-branch>] [--detach] <branch>',
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -136,6 +139,9 @@ const TEXT = {
     noCommit: r => `Commit nicht gefunden: ${r}`,
     noRef: r => `Referenz nicht gefunden: ${r}`,
     notAncestor: r => `${r} ist kein Vorgänger von HEAD.`,
+    branchExpected: r => `Ein Branch wird erwartet, „${r}“ ist ein Commit (mit --detach umschalten).`,
+    noPrevious: 'Es gibt keinen vorherigen Branch.',
+    switchUsage: 'Aufruf: git switch [-c <neuer-branch>] [--detach] <branch>',
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -202,6 +208,9 @@ const TEXT = {
     noCommit: r => `Коміт не знайдено: ${r}`,
     noRef: r => `Посилання не знайдено: ${r}`,
     notAncestor: r => `${r} не є предком HEAD.`,
+    branchExpected: r => `Очікується гілка, а «${r}» — це коміт (використайте --detach).`,
+    noPrevious: 'Попередньої гілки немає.',
+    switchUsage: 'Використання: git switch [-c <нова-гілка>] [--detach] <гілка>',
     upToDate: 'Уже актуально.'
   }
 }

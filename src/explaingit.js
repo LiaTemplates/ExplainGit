@@ -232,27 +232,83 @@ function controlBoxFactory() {
             }
         },
 
+        // switch and checkout: opt = {create, force, start, detach, lenient}
+        _changeBranch: function (name, opt) {
+            var hv = this.historyView;
+
+            if (name === '-') {
+                if (!hv.previousBranch) {
+                    throw new Error(tr('noPrevious'));
+                }
+                name = hv.previousBranch;
+            }
+
+            if (opt.create) {
+                var start = hv.getCommit(opt.start || 'HEAD');
+                if (!start) {
+                    throw new Error(tr('noRef', opt.start));
+                }
+                if (!hv.isLocalBranch(name)) {
+                    hv.branch(name, start.id);
+                } else if (opt.force) {
+                    hv.moveTag(name, start.id);
+                } else if (!opt.lenient) {
+                    hv.branch(name); // throws "already exists"
+                }
+            } else if (opt.detach) {
+                name = hv.getCommit(name || 'HEAD') ? hv.getCommit(name || 'HEAD').id : name;
+            } else if (opt.branchOnly && !hv.isLocalBranch(name)) {
+                throw new Error(hv.getCommit(name) ? tr('branchExpected', name) : tr('noRef', name));
+            }
+
+            hv.checkout(name);
+        },
+
         checkout: function (args) {
+            var opt = { lenient: true }, name;
+
             while (args.length > 0) {
                 var arg = args.shift();
-
-                switch (arg) {
-                case '-b':
-                    var name = args[args.length - 1];
-                    try {
-                        this.historyView.branch(name);
-                    } catch (err) {
-                        if (err.code !== 'exists') {
-                            throw new Error(err.message);
-                        }
-                    }
-                    break;
-                default:
-                    var remainingArgs = [arg].concat(args);
+                if (arg === '-b' || arg === '-B') {
+                    opt.create = true;
+                    opt.force = arg === '-B';
+                    name = args.shift();
+                    opt.start = args.shift();
+                } else if (arg === '--detach') {
+                    opt.detach = true;
+                } else {
+                    name = [arg].concat(args).join(' ');
                     args.length = 0;
-                    this.historyView.checkout(remainingArgs.join(' '));
                 }
             }
+
+            if (!name && !opt.detach) {
+                throw new Error(tr('needBranchName'));
+            }
+            this._changeBranch(name, opt);
+        },
+
+        switch: function (args) {
+            var opt = { branchOnly: true }, name;
+
+            while (args.length > 0) {
+                var arg = args.shift();
+                if (arg === '-c' || arg === '--create' || arg === '-C' || arg === '--force-create') {
+                    opt.create = true;
+                    opt.force = arg === '-C' || arg === '--force-create';
+                    name = args.shift();
+                    opt.start = args.shift();
+                } else if (arg === '-d' || arg === '--detach') {
+                    opt.detach = true;
+                } else if (!name) {
+                    name = arg;
+                }
+            }
+
+            if (!name && !opt.detach) {
+                throw new Error(tr('switchUsage'));
+            }
+            this._changeBranch(name, opt);
         },
 
         tag: function (args) {
@@ -1000,7 +1056,7 @@ function historyViewFactory(d3) {
             this._renderMergePointers();
             this._renderIdLabels();
             this._resizeSvg();
-            this.checkout(this.currentBranch);
+            this.checkout(this.currentBranch || this.getCommit('HEAD').id);
         },
 
         _renderCircles: function () {
@@ -1291,6 +1347,10 @@ function historyViewFactory(d3) {
             var display = this.svg.select('text.current-branch-display'),
                 text;
 
+            if (this.currentBranch && this.currentBranch !== branch) {
+                this.previousBranch = this.currentBranch;
+            }
+
             if (branch && branch.indexOf('/') === -1) {
                 text = tr('currentBranch', branch);
                 this.currentBranch = branch;
@@ -1378,7 +1438,15 @@ function historyViewFactory(d3) {
             return this;
         },
 
-        branch: function (name) {
+        // from the commits, not from this.branches: that list is filled only when tags are drawn
+        isLocalBranch: function (name) {
+            if (!name || name === 'HEAD' || name.indexOf('/') > -1 || name.charAt(0) === '[') {
+                return false;
+            }
+            return this.commitData.some(function (c) { return c.tags.indexOf(name) > -1; });
+        },
+
+        branch: function (name, start) {
             if (!name || name.trim() === '') {
                 throw new Error(tr('needBranchName'));
             }
@@ -1397,7 +1465,7 @@ function historyViewFactory(d3) {
                 throw exists;
             }
 
-            this.getCommit('HEAD').tags.push(name);
+            this.getCommit(start || 'HEAD').tags.push(name);
             this.renderTags();
             return this;
         },
@@ -1449,7 +1517,7 @@ function historyViewFactory(d3) {
                 previousHead.classed('checked-out', false);
             }
 
-            this._setCurrentBranch(ref === commit.id ? null : ref);
+            this._setCurrentBranch(this.isLocalBranch(ref) ? ref : null);
             this.moveTag('HEAD', commit.id);
             this.renderTags();
 

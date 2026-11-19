@@ -286,3 +286,14 @@
     font-weight: bold;
     text-transform: uppercase;
 }
+
+/* HEAD of another worktree */
+.explaingit g.head-tag.worktree-head > rect {
+    fill: #EEFFEE;
+    stroke-dasharray: 4 2;
+}
+
+.explaingit g.head-tag.worktree-head > text {
+    font-weight: normal;
+    text-transform: none;
+}

@@ -26,6 +26,8 @@ function controlBoxFactory() {
         this.rebaseConfig = {}; // to configure branches for rebase
     }
 
+    var NOT_COMMANDS = ['init', 'render', 'destroy', 'command', 'info', 'error'];
+
     ControlBox.prototype = {
         init: function(cmds) {
             cmds.map(cmd => this.command(cmd));
@@ -147,29 +149,51 @@ function controlBoxFactory() {
 
             this._scrollToBottom();
 
+            try {
+                this._run(split);
+            } catch (ex) {
+                var msg = (ex && ex.message) ? ex.message: null;
+                this.error(msg);
+            }
+        },
+
+        _run: function (split) {
+            var hv = this.historyView;
+
             if (split[0] === 'edit') {
-                if (this.historyView.status === 'clean') {
-                    this.historyView.setStatus('unstaged');
+                if (hv.status === 'clean') {
+                    hv.setStatus('unstaged');
                 }
                 return this.info(tr('edited'));
+            }
+
+            if (split[0] === 'cd') {
+                return hv.activate(split[1] || '.');
             }
 
             if (split[0] !== 'git') {
                 return this.error();
             }
 
+            // git -C <path> <command>: run in another worktree, then come back
+            if (split[1] === '-C') {
+                var back = hv.worktrees[hv.active].path;
+                hv.activate(split[2]);
+                try {
+                    return this._run(['git'].concat(split.slice(3)));
+                } finally {
+                    hv.activate(back);
+                }
+            }
+
             var method = split[1],
                 args = split.slice(2);
 
-            try {
-                if (typeof this[method] === 'function') {
-                    this[method](args);
-                } else {
-                    this.error();
-                }
-            } catch (ex) {
-                var msg = (ex && ex.message) ? ex.message: null;
-                this.error(msg);
+            // only git commands, not the widget's own methods
+            if (typeof this[method] === 'function' && method.charAt(0) !== '_' && NOT_COMMANDS.indexOf(method) === -1) {
+                this[method](args);
+            } else {
+                this.error();
             }
         },
 
@@ -276,6 +300,10 @@ function controlBoxFactory() {
                     throw new Error(tr('noPrevious'));
                 }
                 name = hv.previousBranch;
+            }
+
+            if (!opt.detach && hv.isLocalBranch(name) && name !== hv.currentBranch) {
+                hv.checkFree(name);
             }
 
             if (opt.create) {
@@ -418,6 +446,83 @@ function controlBoxFactory() {
 
         status: function () {
             this.info(tr('status_' + this.historyView.status));
+        },
+
+        // worktree add [-b <new>] [--detach] <path> [<commit-ish>] | list | remove [--force] <path>
+        worktree: function (args) {
+            var hv = this.historyView,
+                sub = args.shift(),
+                opt = {},
+                pos = [];
+
+            while (args.length > 0) {
+                var arg = args.shift();
+                if (arg === '-b' || arg === '-B') {
+                    opt.create = args.shift();
+                    opt.force = arg === '-B';
+                } else if (arg === '--detach' || arg === '-d') {
+                    opt.detach = true;
+                } else if (arg === '--force' || arg === '-f') {
+                    opt.forceRemove = true;
+                } else if (arg.charAt(0) !== '-') {
+                    pos.push(arg);
+                }
+            }
+
+            if (sub === 'list') {
+                var control = this;
+                return hv.worktrees.forEach(function (w, i) {
+                    var head = hv.worktreeHead(i),
+                        branch = i === hv.active ? hv.currentBranch : w.branch;
+                    control.info(w.path + '  ' + head + (branch ? ' [' + branch + ']' : ' (detached HEAD)'));
+                });
+            }
+            if (sub === 'remove') {
+                if (!pos[0]) {
+                    throw new Error(tr('worktreeUsage'));
+                }
+                return hv.removeWorktree(pos[0], opt.forceRemove);
+            }
+            if (sub !== 'add' || !pos[0]) {
+                throw new Error(tr('worktreeUsage'));
+            }
+
+            var path = pos[0], target = pos[1], branch = null, commit;
+            if (hv.findWorktree(path) > -1) {
+                throw new Error(tr('worktreeExists', path));
+            }
+
+            if (opt.create) {
+                branch = opt.create;
+                commit = hv.getCommit(target || 'HEAD');
+                if (!commit) {
+                    throw new Error(tr('noRef', target));
+                }
+                if (hv.isLocalBranch(branch) && opt.force) {
+                    hv.checkFree(branch);
+                    hv.moveTag(branch, commit.id);
+                } else {
+                    hv.branch(branch, commit.id);
+                }
+            } else if (opt.detach || (target && !hv.isLocalBranch(target))) {
+                commit = hv.getCommit(target || 'HEAD');
+                if (!commit) {
+                    throw new Error(tr('noRef', target));
+                }
+            } else {
+                // like git: without a branch, use (or create) one named after the folder
+                branch = target || path.split('/').pop();
+                if (!hv.isLocalBranch(branch)) {
+                    hv.branch(branch);
+                }
+            }
+
+            if (branch) {
+                hv.checkFree(branch);
+                commit = hv.getCommit(branch);
+            }
+            hv.addWorktree(path, branch, commit.id);
+            this.info(tr('worktreeAdded', path, branch || commit.id));
         },
 
         // stash [push [-m msg]] | pop | apply | drop | list  [stash@{n}]
@@ -992,7 +1097,7 @@ function historyViewFactory(d3) {
         var commit = view.getCommit(t.commit),
             commitCY = commit.cy,
             tags = commit.tags,
-            tagIndex = tags.indexOf(t.name);
+            tagIndex = typeof t.index === 'number' ? t.index : tags.indexOf(t.name);
 
         if (tagIndex === -1) {
             tagIndex = tags.length;
@@ -1040,6 +1145,9 @@ function historyViewFactory(d3) {
         this.status = 'clean'; // working tree: clean, staged or unstaged
         this.stashes = [];      // commit ids, newest first
         this.upstream = {};     // branch -> remote tracking branch, set by push -u / branch -u
+        // worktrees: the active one lives in currentBranch, HEAD and status
+        this.worktrees = [{ path: '.', branch: this.currentBranch, head: null, status: 'clean' }];
+        this.active = 0;
         this.remoteName = config.remoteName;
 
         this.initialCommit = {
@@ -1454,6 +1562,20 @@ function historyViewFactory(d3) {
                 tagData.push({name: 'HEAD', commit: headCommit.id});
             }
 
+            // the HEADs of the other worktrees
+            for (i = 0; i < this.worktrees.length; i++) {
+                if (i !== this.active) {
+                    tagData.push({name: 'HEAD ' + this.worktrees[i].path, commit: this.worktreeHead(i)});
+                }
+            }
+
+            // stacking order per commit, so no two tags share a place
+            var count = {};
+            tagData.forEach(function (t) {
+                t.index = count[t.commit] = (count[t.commit] || 0) + 1;
+                t.index--;
+            });
+
             // find out which commits are not branchless
 
 
@@ -1468,10 +1590,16 @@ function historyViewFactory(d3) {
                 this.commitData[c].branchless = true;
             }
 
-            for (b = 0; b < this.branches.length; b++) {
-                branch = this.branches[b];
-                if (!this.isRemoteRef(branch)) {
-                    commit = this.getCommit(branch);
+            // reachable from a local branch, a stash or any worktree's HEAD
+            var starts = this.branches.filter(function (r) { return !this.isRemoteRef(r); }, this);
+            for (b = 0; b < this.worktrees.length; b++) {
+                starts.push(this.worktreeHead(b));
+            }
+
+            for (b = 0; b < starts.length; b++) {
+                branch = starts[b];
+                commit = this.getCommit(branch);
+                if (commit) {
                     parent = this.getCommit(commit.parent);
                     parent2 = this.getCommit(commit.parent2);
 
@@ -1529,7 +1657,9 @@ function historyViewFactory(d3) {
                 .append('g')
                 .attr('class', function (d) {
                     var classes = 'branch-tag';
-                    if (d.name.indexOf('[') === 0 && d.name.indexOf(']') === d.name.length - 1) {
+                    if (d.name.indexOf('HEAD ') === 0) {
+                        classes += ' head-tag worktree-head';
+                    } else if (d.name.indexOf('[') === 0 && d.name.indexOf(']') === d.name.length - 1) {
                         classes += ' git-tag';
                     } else if (d.name.indexOf('stash@{') === 0) {
                         classes += ' stash-tag';
@@ -1594,6 +1724,10 @@ function historyViewFactory(d3) {
                 this.currentBranch = null;
             }
 
+            if (this.worktrees && this.worktrees.length > 1) {
+                text = tr('inWorktree', text, this.worktrees[this.active].path);
+            }
+
             display.text(text);
         },
 
@@ -1647,6 +1781,90 @@ function historyViewFactory(d3) {
             }
 
             return inTree;
+        },
+
+        findWorktree: function (path) {
+            for (var i = 0; i < this.worktrees.length; i++) {
+                if (this.worktrees[i].path === path) {
+                    return i;
+                }
+            }
+            return -1;
+        },
+
+        worktreeHead: function (i) {
+            var w = this.worktrees[i];
+            if (i === this.active) {
+                return this.getCommit('HEAD').id;
+            }
+            return w.branch ? this.getCommit(w.branch).id : w.head;
+        },
+
+        // the path of the worktree that has <branch> checked out, or null
+        worktreeOf: function (branch) {
+            for (var i = 0; i < this.worktrees.length; i++) {
+                var b = i === this.active ? this.currentBranch : this.worktrees[i].branch;
+                if (b === branch) {
+                    return this.worktrees[i].path;
+                }
+            }
+            return null;
+        },
+
+        // a branch may be checked out in one worktree only
+        checkFree: function (branch) {
+            var path = this.worktreeOf(branch);
+            if (path !== null) {
+                throw new Error(tr('branchInWorktree', branch, path));
+            }
+        },
+
+        activate: function (path) {
+            var index = this.findWorktree(path);
+            if (index === -1) {
+                throw new Error(tr('noWorktree', path));
+            }
+            if (index === this.active) {
+                return;
+            }
+            var current = this.worktrees[this.active],
+                next = this.worktrees[index];
+
+            current.branch = this.currentBranch;
+            current.head = this.getCommit('HEAD').id;
+            current.status = this.status;
+            current.previous = this.previousBranch;
+
+            this.active = index;
+            this.currentBranch = next.branch;
+            this.previousBranch = next.previous || null;
+            this.checkout(next.branch || next.head);
+            this.setStatus(next.status);
+        },
+
+        addWorktree: function (path, branch, head) {
+            this.worktrees.push({ path: path, branch: branch, head: head, status: 'clean' });
+            this._setCurrentBranch(this.currentBranch);
+            this.renderTags();
+        },
+
+        removeWorktree: function (path, force) {
+            var index = this.findWorktree(path);
+            if (index === -1) {
+                throw new Error(tr('noWorktree', path));
+            }
+            if (index === 0 || index === this.active) {
+                throw new Error(tr('worktreeInUse', path));
+            }
+            if (this.worktrees[index].status !== 'clean' && !force) {
+                throw new Error(tr('worktreeDirty', path));
+            }
+            this.worktrees.splice(index, 1);
+            if (this.active > index) {
+                this.active--;
+            }
+            this._setCurrentBranch(this.currentBranch);
+            this.renderTags();
         },
 
         // a stash is a commit on top of HEAD that no branch points to, named stash@{n}
@@ -1796,6 +2014,11 @@ function historyViewFactory(d3) {
             var commit = this.getCommit(old);
             commit.tags[commit.tags.indexOf(old)] = name;
             this.branches.splice(this.branches.indexOf(old), 1);
+            this.worktrees.forEach(function (w) {
+                if (w.branch === old) {
+                    w.branch = name;
+                }
+            });
             if (this.currentBranch === old) {
                 this.currentBranch = name;
                 this._setCurrentBranch(name);
@@ -1818,6 +2041,7 @@ function historyViewFactory(d3) {
             if (name === this.currentBranch) {
                 throw new Error(tr('cannotForceCurrent', name));
             }
+            this.checkFree(name);
             if (!target) {
                 throw new Error(tr('noRef', ref));
             }
@@ -1853,6 +2077,7 @@ function historyViewFactory(d3) {
             if (name === this.currentBranch) {
                 throw new Error(tr('deleteCurrent'));
             }
+            this.checkFree(name);
 
             branchIndex = this.branches.indexOf(name);
 
@@ -2025,7 +2250,7 @@ function historyViewFactory(d3) {
                     if (tagName === this.currentBranch || tagName === 'HEAD') {
                         continue;
                     }
-                    if (opt.updateRefs && this.isLocalBranch(tagName)) {
+                    if (opt.updateRefs && this.isLocalBranch(tagName) && this.worktreeOf(tagName) === null) {
                         moved.push(tagName);
                     } else {
                         remainingHusk.tags.unshift(tagName);

@@ -90,6 +90,17 @@ const TEXT = {
     staleLease: 'Rejected: the remote changed since your last fetch.',
     remoteDeleted: b => `Deleted remote branch ${b}.`,
     upstreamSet: (b, u) => `Branch ${b} tracks ${u}.`,
+    branchInWorktree: (b, p) => `'${b}' is already used by worktree at '${p}'.`,
+    noWorktree: p => `'${p}' is not a working tree.`,
+    worktreeAdded: (p, b) => `Preparing worktree ${p} (${b}).`,
+    worktreeExists: p => `'${p}' already exists.`,
+    worktreeInUse: p => `Cannot remove '${p}': it is the main or the current worktree.`,
+    worktreeDirty: p => `'${p}' contains changes, use --force to delete it.`,
+    worktreeUsage: 'Usage: git worktree add [-b <branch>] <path> [<commit>] | list | remove <path>',
+    inWorktree: (text, p) => `${text} · ${p}`,
+    worktreeMissing: p => `Worktree ${p} is missing.`,
+    worktreeWrong: p => `Worktree ${p} is not on the right branch or commit yet.`,
+    worktreeExtra: p => `Worktree ${p} should not exist.`,
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -176,6 +187,17 @@ const TEXT = {
     staleLease: 'Abgelehnt: Der Remote hat sich seit dem letzten Fetch geändert.',
     remoteDeleted: b => `Remote-Branch ${b} gelöscht.`,
     upstreamSet: (b, u) => `Branch ${b} folgt ${u}.`,
+    branchInWorktree: (b, p) => `„${b}“ ist bereits im Worktree „${p}“ ausgecheckt.`,
+    noWorktree: p => `„${p}“ ist kein Worktree.`,
+    worktreeAdded: (p, b) => `Worktree ${p} angelegt (${b}).`,
+    worktreeExists: p => `„${p}“ gibt es schon.`,
+    worktreeInUse: p => `„${p}“ kann nicht entfernt werden: Es ist der Haupt- oder der aktuelle Worktree.`,
+    worktreeDirty: p => `„${p}“ enthält Änderungen, mit --force trotzdem löschen.`,
+    worktreeUsage: 'Aufruf: git worktree add [-b <branch>] <pfad> [<commit>] | list | remove <pfad>',
+    inWorktree: (text, p) => `${text} · ${p}`,
+    worktreeMissing: p => `Worktree ${p} fehlt.`,
+    worktreeWrong: p => `Worktree ${p} ist noch nicht auf dem richtigen Branch oder Commit.`,
+    worktreeExtra: p => `Worktree ${p} sollte es nicht geben.`,
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -262,6 +284,17 @@ const TEXT = {
     staleLease: 'Відхилено: віддалений репозиторій змінився після останнього fetch.',
     remoteDeleted: b => `Віддалену гілку ${b} видалено.`,
     upstreamSet: (b, u) => `Гілка ${b} відстежує ${u}.`,
+    branchInWorktree: (b, p) => `«${b}» вже використовується у робочому дереві «${p}».`,
+    noWorktree: p => `«${p}» не є робочим деревом.`,
+    worktreeAdded: (p, b) => `Створено робоче дерево ${p} (${b}).`,
+    worktreeExists: p => `«${p}» вже існує.`,
+    worktreeInUse: p => `Неможливо видалити «${p}»: це головне або поточне робоче дерево.`,
+    worktreeDirty: p => `«${p}» містить зміни; використайте --force, щоб видалити.`,
+    worktreeUsage: 'Використання: git worktree add [-b <гілка>] <шлях> [<коміт>] | list | remove <шлях>',
+    inWorktree: (text, p) => `${text} · ${p}`,
+    worktreeMissing: p => `Робоче дерево ${p} відсутнє.`,
+    worktreeWrong: p => `Робоче дерево ${p} ще не на правильній гілці чи коміті.`,
+    worktreeExtra: p => `Робочого дерева ${p} не має бути.`,
     upToDate: 'Уже актуально.'
   }
 }

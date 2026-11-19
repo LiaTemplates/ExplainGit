@@ -40,3 +40,11 @@ test('commit ids look like hashes, not a counter', () => {
   const ids = run(['git commit', 'git commit', 'git commit', 'git commit', 'git commit']).box.hv.commitData.slice(1).map(c => c.id)
   assert.equal(new Set(ids.map(id => id.slice(1, 4))).size, ids.length)
 })
+
+test('internal methods are not git commands', () => {
+  for (const cmd of ['git destroy', 'git render', 'git command x', 'git _changeBranch master', 'git init']) {
+    const { log, box } = run([cmd, 'git commit'])
+    assert.equal(log.find(l => l.kind === 'error')?.text, "I don't understand that.", cmd)
+    assert.notEqual(box.hv.getCommit('HEAD').id, 'e137e9b', cmd)
+  }
+})

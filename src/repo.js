@@ -119,7 +119,11 @@ export function viewInfo(hv) {
     refs,
     branch: hv.currentBranch,
     head: headCommit ? headCommit.id : null,
-    status: hv.status || 'clean'
+    status: hv.status || 'clean',
+    // [path, branch, head] of every worktree, by path
+    worktrees: hv.worktrees
+      .map((w, i) => [w.path, i === hv.active ? hv.currentBranch : w.branch, hv.worktreeHead(i)])
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
   }
 }
 
@@ -180,6 +184,19 @@ export function compare(actual, expected) {
   if (problems.length) return problems
 
   if (actual[0][1].status !== expected[0][1].status) return [tr('wrongStatus')]
+
+  // other worktrees ('.' is covered by the HEAD check below)
+  const a = actual[0][1], e = expected[0][1]
+  const others = v => new Map(v.worktrees.filter(w => w[0] !== '.').map(w => [w[0], w]))
+  const wa = others(a), we = others(e)
+  for (const [path, w] of we) {
+    const got = wa.get(path)
+    if (!got) problems.push(tr('worktreeMissing', path))
+    else if (got[1] !== w[1] || encode([['wt', got[2], a.byId]]) !== encode([['wt', w[2], e.byId]]))
+      problems.push(tr('worktreeWrong', path))
+  }
+  for (const path of wa.keys()) if (!we.has(path)) problems.push(tr('worktreeExtra', path))
+  if (problems.length) return problems
 
   if (encode(starts(actual)) !== encode(starts(expected))) {
     const a = actual[0][1]

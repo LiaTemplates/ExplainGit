@@ -84,6 +84,9 @@ const TEXT = {
     edited: 'You changed a file.',
     needPath: 'Name a path, e.g. a dot for everything.',
     wrongStatus: 'The working tree is not in the right state yet.',
+    stashSaved: n => `Saved working directory as stash@{${n}}.`,
+    noLocalChanges: 'No local changes to save.',
+    noStash: 'No stash entries found.',
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -164,6 +167,9 @@ const TEXT = {
     edited: 'Du hast eine Datei geändert.',
     needPath: 'Gib einen Pfad an, z. B. einen Punkt für alles.',
     wrongStatus: 'Das Arbeitsverzeichnis ist noch nicht im richtigen Zustand.',
+    stashSaved: n => `Arbeitsverzeichnis als stash@{${n}} gesichert.`,
+    noLocalChanges: 'Keine Änderungen zum Sichern.',
+    noStash: 'Keine Stash-Einträge vorhanden.',
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -244,6 +250,9 @@ const TEXT = {
     edited: 'Ви змінили файл.',
     needPath: 'Вкажіть шлях, наприклад крапку для всього.',
     wrongStatus: 'Робочий каталог ще не в потрібному стані.',
+    stashSaved: n => `Робочий каталог збережено як stash@{${n}}.`,
+    noLocalChanges: 'Немає змін для збереження.',
+    noStash: 'Записів stash немає.',
     upToDate: 'Уже актуально.'
   }
 }

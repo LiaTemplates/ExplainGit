@@ -411,6 +411,42 @@ function controlBoxFactory() {
             this.info(tr('status_' + this.historyView.status));
         },
 
+        // stash [push [-m msg]] | pop | apply | drop | list  [stash@{n}]
+        stash: function (args) {
+            var hv = this.historyView,
+                action = args[0] && args[0].charAt(0) !== '-' ? args[0] : 'push',
+                ref = args[1] || 'stash@{0}',
+                index = Number((/^stash@\{(\d+)\}$/.exec(ref) || [])[1]);
+
+            if (action === 'push' || action === 'save') {
+                if (hv.status === 'clean') {
+                    return this.info(tr('noLocalChanges'));
+                }
+                hv.stashPush();
+                return this.info(tr('stashSaved', 0));
+            }
+            if (action === 'list') {
+                for (var i = 0; i < hv.stashes.length; i++) {
+                    this.info('stash@{' + i + '}: ' + hv.getCommit(hv.stashes[i]).message);
+                }
+                return;
+            }
+            if (hv.stashes.length === 0) {
+                throw new Error(tr('noStash'));
+            }
+            if (isNaN(index) || index >= hv.stashes.length) {
+                throw new Error(tr('noRef', ref));
+            }
+            if (action === 'apply' || action === 'pop') {
+                hv.setStatus('unstaged');
+            }
+            if (action === 'drop' || action === 'pop') {
+                hv.stashDrop(index);
+            } else if (action !== 'apply') {
+                return this.error();
+            }
+        },
+
         clean: function (args) {
             this.info(tr('clean'));
         },
@@ -957,6 +993,7 @@ function historyViewFactory(d3) {
         this.isRemote = typeof config.remoteName === 'string';
         this.remotes = config.remotes || ['origin'];
         this.status = 'clean'; // working tree: clean, staged or unstaged
+        this.stashes = [];      // commit ids, newest first
         this.remoteName = config.remoteName;
 
         this.initialCommit = {
@@ -1229,6 +1266,9 @@ function historyViewFactory(d3) {
                 .classed('squashed', function (d) {
                     return !!d.squashOf;
                 })
+                .classed('stash', function (d) {
+                    return !!d.stash;
+                })
                 .call(fixCirclePosition)
                 .attr('r', 1)
                 .transition("inflate")
@@ -1445,6 +1485,8 @@ function historyViewFactory(d3) {
                     var classes = 'branch-tag';
                     if (d.name.indexOf('[') === 0 && d.name.indexOf(']') === d.name.length - 1) {
                         classes += ' git-tag';
+                    } else if (d.name.indexOf('stash@{') === 0) {
+                        classes += ' stash-tag';
                     } else if (view.isRemoteRef(d.name)) {
                         classes += ' remote-branch';
                     } else if (d.name.toUpperCase() === 'HEAD') {
@@ -1561,6 +1603,39 @@ function historyViewFactory(d3) {
             return inTree;
         },
 
+        // a stash is a commit on top of HEAD that no branch points to, named stash@{n}
+        stashPush: function () {
+            var commit = {
+                id: this.nextId(),
+                parent: this.getCommit('HEAD').id,
+                message: 'WIP on ' + (this.currentBranch || this.getCommit('HEAD').id),
+                tags: [],
+                stash: true
+            };
+            this.commitData.push(commit);
+            this.stashes.unshift(commit.id);
+            this._numberStashes();
+            this.setStatus('clean');
+            this.renderCommits();
+        },
+
+        stashDrop: function (index) {
+            this.stashes.splice(index, 1);
+            this._numberStashes();
+            this.renderCommits();
+        },
+
+        _numberStashes: function () {
+            var view = this;
+            this.commitData.forEach(function (c) {
+                c.tags = c.tags.filter(function (t) { return t.indexOf('stash@{') !== 0; });
+            });
+            this.branches = this.branches.filter(function (t) { return t.indexOf('stash@{') !== 0; });
+            this.stashes.forEach(function (id, i) {
+                view.getCommit(id).tags.push('stash@{' + i + '}');
+            });
+        },
+
         // copies one commit onto HEAD, returns the copied (source) commit
         cherryPick: function (ref) {
             var source = this.getCommit(ref);
@@ -1628,7 +1703,7 @@ function historyViewFactory(d3) {
 
         // from the commits, not from this.branches: that list is filled only when tags are drawn
         isLocalBranch: function (name) {
-            if (!name || name === 'HEAD' || this.isRemoteRef(name) || name.charAt(0) === '[') {
+            if (!name || name === 'HEAD' || this.isRemoteRef(name) || name.charAt(0) === '[' || name.indexOf('stash@{') === 0) {
                 return false;
             }
             return this.commitData.some(function (c) { return c.tags.indexOf(name) > -1; });

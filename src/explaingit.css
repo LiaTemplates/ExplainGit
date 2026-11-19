@@ -201,6 +201,17 @@
     stroke-width: 5;
 }
 
+.explaingit circle.commit.stash {
+    fill: #E8EEF8;
+    stroke: #5A6E99;
+    stroke-dasharray: 2 2;
+}
+
+.explaingit g.branch-tag.stash-tag > rect {
+    fill: #E8EEF8;
+    stroke: #5A6E99;
+}
+
 .explaingit circle.commit.branchless {
     fill: #FEFEFE;
     stroke: #DDD;

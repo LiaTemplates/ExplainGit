@@ -15,6 +15,7 @@ export const SCRIPTS = [
   { name: 'stash', cmds: ['edit', 'git stash', 'git commit', 'edit', 'git stash', 'git stash drop', 'git stash pop'] },
   { name: 'remote', opts: { origin: true }, cmds: ['git commit -m a', 'git push', 'git commit --amend -m b', 'git push --force-with-lease', 'git switch -c dev', 'git commit', 'git push -u origin dev', 'git push origin --delete dev', 'git fetch --prune'] },
   { name: 'worktree', cmds: ['git worktree add -b dev ../wt', 'git -C ../wt commit', 'cd ../wt', 'git commit', 'cd .', 'git worktree add --detach ../wt2 dev^', 'git worktree remove ../wt2'] },
+  { name: 'detached commits', cmds: ['git commit', 'git switch --detach HEAD', 'git commit', 'git commit --amend -m x', 'git switch -c saved'] },
 ]
 
 for (const { name, cmds, opts } of SCRIPTS)

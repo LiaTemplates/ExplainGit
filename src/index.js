@@ -1,6 +1,6 @@
 // ExplainGit for LiaScript: widget, quiz check and collaborative mode
 import css from 'bundle-text:./explaingit.css'
-import { Sandbox, parseCommands, parseQuiz, viewInfo, refLabel, snapshot, compare } from './repo.js'
+import { Sandbox, parseCommands, parseQuiz, viewInfo, refLabel, snapshot, compare, needsStatus } from './repo.js'
 import { tr, fill, lang, translatable, noteLang } from './i18n.js'
 
 const PREFIX = 'ExplainGit:'
@@ -265,7 +265,7 @@ class Widget {
       return false
     }
     const expected = simulate(q.setup.concat(q.solution), q.origin, q.init)
-    const problems = compare(snapshot(this.box), expected)
+    const problems = compare(snapshot(this.box), expected, { status: needsStatus(q.setup.concat(q.solution)) })
     if (problems.length) throw new Error(problems.join(' '))
     return true
   }

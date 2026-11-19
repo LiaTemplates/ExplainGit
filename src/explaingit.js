@@ -2,6 +2,9 @@ import * as d3selection from 'd3-selection'
 import 'd3-transition'
 import { tr, fill } from './i18n.js'
 
+// id of the pseudo commit before the first one; contains a space, so no command can name it
+export const ROOT = 'initial commit'
+
 // d3 v5 API subset used below; event is a live binding
 const d3 = {
   select: d3selection.select,
@@ -190,7 +193,8 @@ function controlBoxFactory() {
                 args = split.slice(2);
 
             // only git commands, not the widget's own methods
-            if (typeof this[method] === 'function' && method.charAt(0) !== '_' && NOT_COMMANDS.indexOf(method) === -1) {
+            if (Object.prototype.hasOwnProperty.call(ControlBox.prototype, method) &&
+                method.charAt(0) !== '_' && NOT_COMMANDS.indexOf(method) === -1) {
                 this[method](args);
             } else {
                 this.error();
@@ -618,7 +622,7 @@ function controlBoxFactory() {
                 return;
             }
 
-            if (opt.ffOnly && hv.getCommit(branch) && !hv.isAncestor('HEAD', branch)) {
+            if (opt.ffOnly && hv.getCommit(branch) && !hv.isAncestor('HEAD', branch) && !hv.isAncestor(branch, 'HEAD')) {
                 throw new Error(tr('notFastForward'));
             }
 
@@ -626,6 +630,8 @@ function controlBoxFactory() {
 
             if (result === 'Fast-Forward') {
                 this.info(tr('fastForward'));
+            } else if (result === 'Up-To-Date') {
+                this.info(tr('upToDate'));
             }
         },
 
@@ -658,6 +664,8 @@ function controlBoxFactory() {
             result = this.historyView.rebase(ref, opt);
             if (result === 'Fast-Forward') {
                 this.info(tr('fastForwardTo', opt.onto || ref));
+            } else if (result === 'Up-To-Date') {
+                this.info(tr('upToDate'));
             }
         },
 
@@ -761,14 +769,14 @@ function controlBoxFactory() {
             }
 
             // at once, not after a delay: replaying commands must give the same state
-            if (args[0] === '--rebase' || control.rebaseConfig[currentBranch] === 'true') {
-                isFastForward = local.rebase(rtBranch) === 'Fast-Forward';
-            } else {
-                isFastForward = local.merge(rtBranch) === 'Fast-Forward';
-            }
+            var result = args[0] === '--rebase' || control.rebaseConfig[currentBranch] === 'true'
+                ? local.rebase(rtBranch)
+                : local.merge(rtBranch);
 
-            if (isFastForward) {
+            if (result === 'Fast-Forward') {
                 control.info(tr('fastForwardTo', rtBranch));
+            } else if (result === 'Up-To-Date') {
+                control.info(tr('upToDate'));
             }
         },
 
@@ -810,6 +818,9 @@ function controlBoxFactory() {
                 if (!remote.isLocalBranch(positional[1])) {
                     throw new Error(tr('noRef', positional[1]));
                 }
+                if (positional[1] === remote.currentBranch) {
+                    throw new Error(tr('deleteCurrent'));
+                }
                 remote._removeTag(positional[1]);
                 remote.renderCommits();
                 local._removeTag(remoteName + '/' + positional[1]);
@@ -845,7 +856,7 @@ function controlBoxFactory() {
                 // copy the commits the remote does not have yet, parents first
                 var toPush = [],
                     copy = function (commit) {
-                        while (commit && commit.id !== 'initial' && remote.getCommit(commit.id) === null &&
+                        while (commit && commit.id !== ROOT && remote.getCommit(commit.id) === null &&
                                toPush.every(function (c) { return c.id !== commit.id; })) {
                             toPush.unshift({
                                 id: commit.id,
@@ -1120,7 +1131,7 @@ function historyViewFactory(d3) {
 
         for (var i = 0; i < commitData.length; i++) {
             commit = commitData[i];
-            !commit.parent && (commit.parent = 'initial');
+            !commit.parent && (commit.parent = ROOT);
             !commit.tags && (commit.tags = []);
         }
 
@@ -1151,7 +1162,7 @@ function historyViewFactory(d3) {
         this.remoteName = config.remoteName;
 
         this.initialCommit = {
-            id: 'initial',
+            id: ROOT,
             parent: null,
             cx: -(this.commitRadius * 2),
             cy: this.baseLine
@@ -1193,7 +1204,7 @@ function historyViewFactory(d3) {
                 suffix = typeof ref === 'string' && /^(.+?)((?:\^|~\d*)+)$/.exec(ref),
                 matchedCommit = null;
 
-            if (ref === 'initial') {
+            if (ref === ROOT) {
                 return this.initialCommit;
             }
 
@@ -1207,7 +1218,7 @@ function historyViewFactory(d3) {
                     matchedCommit = getCommit.call(this, matchedCommit.parent);
                 }
                 // nothing comes before the first commit (git: unknown revision)
-                return matchedCommit && matchedCommit.id !== 'initial' ? matchedCommit : null;
+                return matchedCommit && matchedCommit.id !== ROOT ? matchedCommit : null;
             }
 
             for (var i = 0; i < commitData.length; i++) {
@@ -1905,7 +1916,7 @@ function historyViewFactory(d3) {
         cherryPick: function (ref) {
             var source = this.getCommit(ref);
 
-            if (!source || source.id === 'initial') {
+            if (!source || source.id === ROOT) {
                 throw new Error(tr('noRef', ref));
             }
             if (this.isAncestor(source, 'HEAD')) {
@@ -1920,10 +1931,7 @@ function historyViewFactory(d3) {
             var head = this.getCommit('HEAD'),
                 commit = { parent: head.parent };
 
-            if (!this.currentBranch) {
-                throw new Error(tr('detachedCommit'));
-            }
-            if (head.parent === 'initial') {
+            if (head.parent === ROOT) {
                 throw new Error(tr('amendRoot'));
             }
             if (head.parent2) {
@@ -1944,19 +1952,18 @@ function historyViewFactory(d3) {
             }
             this.squashPending = null;
             if (!commit.parent) {
-                if (!this.currentBranch) {
-                    throw new Error(tr('detachedCommit'));
-                }
-
-                commit.parent = this.getCommit(this.currentBranch).id;
+                commit.parent = this.getCommit('HEAD').id;
             }
 
             this.commitData.push(commit);
-            this.moveTag(this.currentBranch, commit.id);
+            // on a branch the branch moves; on a detached HEAD only HEAD does
+            if (this.currentBranch) {
+                this.moveTag(this.currentBranch, commit.id);
+            }
 
             this.renderCommits();
 
-            this.checkout(this.currentBranch);
+            this.checkout(this.currentBranch || commit.id);
             this.setStatus('clean');
             return this;
         },
@@ -2171,10 +2178,8 @@ function historyViewFactory(d3) {
                 throw new Error(tr('noRef', ref));
             }
 
-            if (currentCommit.id === mergeTarget.id) {
-                throw new Error(tr('upToDate'));
-            } else if (currentCommit.parent2 === mergeTarget.id) {
-                throw new Error(tr('upToDate'));
+            if (this.isAncestor(mergeTarget, currentCommit)) {
+                return 'Up-To-Date';
             } else if (noFF === true) {
                 // the first commit of the merged branch: its parent is already in HEAD
                 var branchStartCommit = mergeTarget;
@@ -2212,8 +2217,8 @@ function historyViewFactory(d3) {
             }
 
             if (!opt.onto) {
-                if (currentCommit.id === upstream.id || currentCommit.parent2 === upstream.id) {
-                    throw new Error(tr('upToDate'));
+                if (this.isAncestor(upstream, currentCommit)) {
+                    return 'Up-To-Date';
                 }
                 if (this.isAncestor(currentCommit, upstream)) {
                     this.fastForward(upstream);
@@ -2222,7 +2227,7 @@ function historyViewFactory(d3) {
             }
 
             // the commits of HEAD that upstream does not have, oldest first
-            while (currentCommit && currentCommit.id !== 'initial' && !this.isAncestor(currentCommit, upstream)) {
+            while (currentCommit && currentCommit.id !== ROOT && !this.isAncestor(currentCommit, upstream)) {
                 toRebase.unshift(currentCommit);
                 currentCommit = this.getCommit(currentCommit.parent);
             }

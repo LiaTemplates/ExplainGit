@@ -1,7 +1,7 @@
 // The repository without the widget: sandbox, parsing and comparing states.
 // No CSS import, so the tests can load it in Node.
 import { select } from 'd3-selection'
-import { ControlBox, HistoryView } from './explaingit.js'
+import { ControlBox, HistoryView, ROOT } from './explaingit.js'
 import { tr } from './i18n.js'
 
 // --- commands ----------------------------------------------------------------
@@ -135,12 +135,13 @@ export function encode(starts) {
   const num = new Map()
   const nodes = []
   const visit = (id, byId) => {
-    if (!id || id === 'initial' || !byId[id]) return '-'
+    if (!id || id === ROOT || !byId[id]) return '-'
     if (num.has(id)) return num.get(id)
     const n = num.size
     num.set(id, n)
     const c = byId[id]
-    nodes[n] = [visit(c.parent, byId), visit(c.parent2, byId)]
+    // where a commit was copied from counts too: cherry-pick, squash and revert differ from a plain commit
+    nodes[n] = [c.parent, c.parent2, c.cherryPickedFrom, c.squashOf, c.reverts].map(id => visit(id, byId))
     return n
   }
   const marks = starts.map(([label, id, byId]) => [label, visit(id, byId)])
@@ -153,7 +154,16 @@ export function snapshot(sandbox) {
   return views
 }
 
-export function compare(actual, expected) {
+// quizzes from 0.1.0 had no working tree (every reset was --hard): compare the status
+// only when the quiz uses working tree commands
+export function needsStatus(cmds) {
+  return cmds.some(c =>
+    /^edit\b/.test(c) ||
+    /^git (-C \S+ )?(add|restore|stash|status)\b/.test(c) ||
+    /--(soft|mixed|hard|squash)\b/.test(c))
+}
+
+export function compare(actual, expected, { status = true } = {}) {
   const problems = []
   // start points for the whole graph: the refs of the solution, then HEAD
   const starts = views =>
@@ -184,7 +194,7 @@ export function compare(actual, expected) {
   }
   if (problems.length) return problems
 
-  if (actual[0][1].status !== expected[0][1].status) return [tr('wrongStatus')]
+  if (status && actual[0][1].status !== expected[0][1].status) return [tr('wrongStatus')]
 
   // other worktrees ('.' is covered by the HEAD check below)
   const a = actual[0][1], e = expected[0][1]

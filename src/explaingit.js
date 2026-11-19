@@ -178,20 +178,24 @@ function controlBoxFactory() {
         },
 
         commit: function (args) {
-            if (args.length >= 2) {
-                var arg = args.shift();
+            var amend = false, message;
 
-                switch (arg) {
-                    case '-m':
-                        var message = args.join(" ").replace(/^(["'])(.*)\1$/, '$2');
-                        this.historyView.commit({},message);
-                        break;
-                    default:
-                        this.historyView.commit();
-                        break;
+            while (args.length > 0) {
+                var arg = args.shift();
+                if (arg === '-m' || arg === '-am' || arg === '--message') {
+                    message = args.join(' ').replace(/^(["'])(.*)\1$/, '$2');
+                    args.length = 0;
+                } else if (arg === '--amend') {
+                    amend = true;
+                } else if (arg !== '-a' && arg !== '--all' && arg !== '--allow-empty' && arg !== '--no-edit') {
+                    return this.error();
                 }
+            }
+
+            if (amend) {
+                this.historyView.amend(message);
             } else {
-                this.historyView.commit();
+                this.historyView.commit({}, message);
             }
         },
 
@@ -1428,6 +1432,23 @@ function historyViewFactory(d3) {
             }
 
             return inTree;
+        },
+
+        // a new commit with the parents of HEAD; the old one is no longer reachable
+        amend: function (message) {
+            var head = this.getCommit('HEAD'),
+                commit = { parent: head.parent };
+
+            if (!this.currentBranch) {
+                throw new Error(tr('detachedCommit'));
+            }
+            if (head.parent === 'initial') {
+                throw new Error(tr('amendRoot'));
+            }
+            if (head.parent2) {
+                commit.parent2 = head.parent2;
+            }
+            return this.commit(commit, message === undefined ? head.message : message);
         },
 
         commit: function (commit, message) {

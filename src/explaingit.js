@@ -11,6 +11,29 @@ var normPath = function (path) {
     return String(path || '').replace(/\/+$/, '').replace(/^\.\/(?=.)/, '') || '.';
 };
 
+// * and ? wildcards in linear time (a RegExp of many .* can take hours)
+var globMatch = function (pattern, text) {
+    var p = 0, i = 0, star = -1, mark = 0;
+    while (i < text.length) {
+        if (p < pattern.length && (pattern.charAt(p) === '?' || pattern.charAt(p) === text.charAt(i))) {
+            p++;
+            i++;
+        } else if (p < pattern.length && pattern.charAt(p) === '*') {
+            star = p++;
+            mark = i;
+        } else if (star > -1) {
+            p = star + 1;
+            i = ++mark;
+        } else {
+            return false;
+        }
+    }
+    while (pattern.charAt(p) === '*') {
+        p++;
+    }
+    return p === pattern.length;
+};
+
 var clone = function (tree) {
     return JSON.parse(JSON.stringify(tree || {}));
 };
@@ -98,28 +121,6 @@ function controlBoxFactory() {
     // shell commands on the working tree
     var SHELL = ['echo', 'cat', 'ls', 'rm', 'mv'];
 
-    // * and ? wildcards in linear time (a RegExp of many .* can take hours)
-    var globMatch = function (pattern, text) {
-        var p = 0, i = 0, star = -1, mark = 0;
-        while (i < text.length) {
-            if (p < pattern.length && (pattern.charAt(p) === '?' || pattern.charAt(p) === text.charAt(i))) {
-                p++;
-                i++;
-            } else if (p < pattern.length && pattern.charAt(p) === '*') {
-                star = p++;
-                mark = i;
-            } else if (star > -1) {
-                p = star + 1;
-                i = ++mark;
-            } else {
-                return false;
-            }
-        }
-        while (pattern.charAt(p) === '*') {
-            p++;
-        }
-        return p === pattern.length;
-    };
 
     // shell words: "quoted text" stays one word (quotes removed), > and >> are words of their own
     var tokenize = function (line) {
@@ -980,7 +981,18 @@ function controlBoxFactory() {
                 hv.index = hv.stagedTracked();
                 return;
             }
-            var paths = hv.pathsFor(args);
+            var force = args.indexOf('-f') > -1 || args.indexOf('--force') > -1,
+                all = args.some(function (a) { return a === '.' || a === '-A' || a === '--all'; }),
+                paths = hv.pathsFor(args).filter(function (p) {
+                    // ignored and not tracked: skipped by add ., refused by name (unless -f)
+                    if (force || p in hv.index || !hv.ignored(p)) {
+                        return true;
+                    }
+                    if (!all) {
+                        throw new Error(tr('ignoredAdd', p));
+                    }
+                    return false;
+                });
             paths.forEach(function (p) {
                 if (hv.work[p]) {
                     hv.index[p] = clone(hv.work[p]);
@@ -1425,13 +1437,16 @@ function controlBoxFactory() {
             if (!hv.hasFiles()) {
                 return this.info(tr('clean'));
             }
-            var letters = args.filter(function (a) { return /^-[a-z]+$/.test(a); }).join(''),
+            var letters = args.filter(function (a) { return /^-[a-zA-Z]+$/.test(a); }).join(''),
                 dry = letters.indexOf('n') > -1 || args.indexOf('--dry-run') > -1,
-                force = letters.indexOf('f') > -1 || args.indexOf('--force') > -1;
+                force = letters.indexOf('f') > -1 || args.indexOf('--force') > -1,
+                withIgnored = letters.indexOf('x') > -1, onlyIgnored = letters.indexOf('X') > -1;
             if (!dry && !force) {
                 throw new Error(tr('requireForce'));
             }
-            hv.untracked().forEach(function (p) {
+            hv.untracked().filter(function (p) {
+                return withIgnored || (onlyIgnored ? !!hv.ignored(p) : !hv.ignored(p));
+            }).forEach(function (p) {
                 if (dry) {
                     control.info(tr('wouldRemove', p));
                 } else {
@@ -2283,6 +2298,21 @@ function controlBoxFactory() {
                 r = next;
             }
             hv.highlight(shown);
+        },
+
+        // check-ignore [-v] <path>...: the paths .gitignore ignores (with the rule)
+        'check-ignore': function (args) {
+            var hv = this.historyView, control = this, verbose = args.indexOf('-v') > -1,
+                paths = args.filter(function (a) { return a.charAt(0) !== '-'; });
+            if (!paths.length) {
+                throw new Error(tr('needPath'));
+            }
+            paths.forEach(function (p) {
+                var rule = !(p in hv.index) && hv.ignored(p);
+                if (rule) {
+                    control.plain(verbose ? '.gitignore:' + rule.line + ':' + rule.pattern + '\t' + p : p);
+                }
+            });
         },
 
         // cat-file -t | -p | -s | -e <object>
@@ -3898,7 +3928,37 @@ function historyViewFactory(d3) {
                     y = 'M';
                 }
                 return { path: p, x: x, y: y };
-            }).filter(function (f) { return f.x !== ' ' || f.y !== ' '; });
+            }).filter(function (f) { return (f.x !== ' ' || f.y !== ' ') && !(f.x === '?' && this.ignored(f.path)); }, this);
+        },
+
+        // the .gitignore rule (of the working tree) that decides about an untracked path, or null;
+        // the last matching line wins, `!` takes a path back, `dir/` matches what is inside
+        ignored: function (path) {
+            var file = this.work['.gitignore'], found = null;
+            if (!Array.isArray(file)) {
+                return null;
+            }
+            var parts = path.split('/');
+            file.forEach(function (line, n) {
+                var text = line.trim();
+                if (!text || text.charAt(0) === '#') {
+                    return;
+                }
+                var negate = text.charAt(0) === '!',
+                    pattern = negate ? text.slice(1) : text,
+                    dir = /\/$/.test(pattern);
+                pattern = pattern.replace(/\/$/, '');
+                var anchored = pattern.indexOf('/') > -1,
+                    hit = anchored
+                        // a path pattern: the whole path, or a folder at the start of it
+                        ? parts.some(function (_, i) { return (dir ? i < parts.length - 1 : true) && globMatch(pattern.replace(/^\//, ''), parts.slice(0, i + 1).join('/')); })
+                        // a name: any part of the path (only folders for dir/)
+                        : parts.some(function (part, i) { return (!dir || i < parts.length - 1) && globMatch(pattern, part); });
+                if (hit) {
+                    found = negate ? null : { line: n + 1, pattern: text };
+                }
+            });
+            return found;
         },
 
         // git add . / -A / <paths>: every path named must exist somewhere

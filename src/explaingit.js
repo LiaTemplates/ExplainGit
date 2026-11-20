@@ -92,7 +92,6 @@ function controlBoxFactory() {
         this._commandHistory = [];
         this._currentCommand = -1;
         this._tempCommand = '';
-        this.rebaseConfig = {}; // to configure branches for rebase
     }
 
     var NOT_COMMANDS = ['init', 'render', 'destroy', 'command', 'info', 'error'];
@@ -1957,7 +1956,9 @@ function controlBoxFactory() {
                 var view = this.world[repo] || this.world[name] || this.createRepo(name);
                 this.remotes[name] = view;
                 this.urls[name] = url;
-                hv.remotes.push(name);
+                if (hv.remotes.indexOf(name) === -1) {
+                    hv.remotes.push(name);
+                }
                 this.showRepo(view);
                 return view.svg && view.svg.select('text.remote-name-display').text(name);
             }
@@ -1971,7 +1972,15 @@ function controlBoxFactory() {
                 this.urls[neu] = this.urls[old];
                 delete this.remotes[old];
                 delete this.urls[old];
-                hv.remotes[hv.remotes.indexOf(old)] = neu;
+                hv.remotes = hv.remotes.filter(function (n) { return n !== old && n !== neu; }).concat(neu);
+                // branches that follow origin/<b> without an explicit upstream keep following it
+                if (old === 'origin') {
+                    Object.keys(hv.refSnapshot().branches).forEach(function (b) {
+                        if (!hv.upstream[b] && hv.getCommit('origin/' + b)) {
+                            hv.upstream[b] = 'origin/' + b;
+                        }
+                    });
+                }
                 hv.commitData.forEach(function (c) {
                     c.tags = c.tags.map(function (t) { return t.indexOf(old + '/') === 0 ? neu + t.slice(old.length) : t; });
                 });
@@ -1990,7 +1999,9 @@ function controlBoxFactory() {
             if (sub === 'remove' || sub === 'rm') {
                 var gone = args[1];
                 need(gone);
-                this.hideRepo(this.remotes[gone]);
+                if (!Object.keys(this.remotes).some(function (n) { return n !== gone && control.remotes[n] === control.remotes[gone]; })) {
+                    this.hideRepo(this.remotes[gone]);
+                }
                 delete this.remotes[gone];
                 delete this.urls[gone];
                 hv.remotes = hv.remotes.filter(function (n) { return n !== gone; });
@@ -2136,11 +2147,11 @@ function controlBoxFactory() {
                 currentBranch = local.currentBranch,
                 positional = args.filter(function (a) { return a.charAt(0) !== '-'; }),
                 upstream = local.upstream[currentBranch],
-                remoteName = positional[0] || (upstream ? upstream.slice(0, upstream.indexOf('/')) : 'origin'),
+                remoteName = positional[0] || this._remoteOf(upstream) || 'origin',
                 rtBranch = positional[1] ? remoteName + '/' + positional[1]
                     : upstream && upstream.indexOf(remoteName + '/') === 0 ? upstream : remoteName + '/' + currentBranch;
 
-            this.fetch(positional.slice(0, 2));
+            this.fetch([remoteName].concat(positional.slice(1, 2)));
 
             if (!currentBranch) {
                 throw new Error(tr('notOnBranch'));
@@ -2155,7 +2166,7 @@ function controlBoxFactory() {
             }
 
             // at once, not after a delay: replaying commands must give the same state
-            var result = args.indexOf('--rebase') > -1 || control.rebaseConfig[currentBranch] === 'true' || local.config['pull.rebase'] === 'true'
+            var result = args.indexOf('--rebase') > -1 || local.config['branch.' + currentBranch + '.rebase'] === 'true' || local.config['pull.rebase'] === 'true'
                 ? local.rebase(rtBranch)
                 : local.merge(rtBranch);
 
@@ -2169,6 +2180,11 @@ function controlBoxFactory() {
                 result.conflicts.forEach(function (p) { control.info(tr('conflictIn', p)); });
                 control.info(tr('mergeFailed'));
             }
+        },
+
+        // the remote of a remote-tracking branch (remote names may contain no /, branch names may)
+        _remoteOf: function (ref) {
+            return ref && this.historyView.remotes.filter(function (r) { return ref.indexOf(r + '/') === 0; })[0];
         },
 
         _copyCommits: function (remote, commit) {
@@ -2215,7 +2231,7 @@ function controlBoxFactory() {
                 }
             });
 
-            var remoteName = positional[0] || 'origin',
+            var remoteName = positional[0] || this._remoteOf(local.upstream[local.currentBranch]) || 'origin',
                 remote = this.remotes[remoteName],
                 refspec = /^([^:]*)(:?)(.*)$/.exec((positional[1] || '').replace(/^\+/, function () { opt.force = true; return ''; })),
                 localRef = refspec[1] || local.currentBranch,
@@ -2328,10 +2344,6 @@ function controlBoxFactory() {
                 return;
             }
             hv.config[key] = takeMessage(args.slice(1), []);
-            var branch = /^branch\.(.+)\.rebase$/.exec(key);
-            if (branch) {
-                this.rebaseConfig[branch[1]] = hv.config[key];
-            }
         }
     };
 

@@ -1,6 +1,7 @@
 import * as d3selection from 'd3-selection'
 import 'd3-transition'
 import { tr, fill } from './i18n.js'
+import { sameLines } from './files.js'
 
 // id of the pseudo commit before the first one; contains a space, so no command can name it
 export const ROOT = 'initial commit'
@@ -8,6 +9,15 @@ export const ROOT = 'initial commit'
 // worktree paths: ../wt/ is ../wt, ./wt is wt
 var normPath = function (path) {
     return String(path || '').replace(/\/+$/, '').replace(/^\.\/(?=.)/, '') || '.';
+};
+
+var clone = function (tree) {
+    return JSON.parse(JSON.stringify(tree || {}));
+};
+
+var sameTree = function (a, b) {
+    var keys = Object.keys(a).concat(Object.keys(b));
+    return keys.every(function (k) { return sameLines(a[k], b[k]); });
 };
 
 // width of a branch or tag label, as renderTags draws it
@@ -40,6 +50,8 @@ function controlBoxFactory() {
     }
 
     var NOT_COMMANDS = ['init', 'render', 'destroy', 'command', 'info', 'error'];
+    // shell commands on the working tree
+    var SHELL = ['echo', 'cat', 'ls', 'rm', 'mv'];
 
     // the message after -m: "in quotes", or every word up to the next known flag
     // (0.1.0 courses write git commit -m Hello World)
@@ -185,16 +197,78 @@ function controlBoxFactory() {
                 var msg = (ex && ex.message) ? ex.message: null;
                 this.error(msg);
             }
+            if (this.historyView && this.historyView.svg) {
+                this.historyView.showStatus();
+            }
+        },
+
+        // echo text | echo "text" > file | echo text >> file
+        _echo: function (args) {
+            var text = takeMessage(args, ['>', '>>']),
+                op = args.shift(),
+                file = args.shift(),
+                work = this.historyView.work;
+
+            if (!op) {
+                return this.info(text);
+            }
+            if (!file) {
+                throw new Error(tr('needPath'));
+            }
+            work[file] = (op === '>>' && work[file] ? work[file] : []).concat([text]);
+        },
+
+        _cat: function (args) {
+            var work = this.historyView.work, control = this;
+            if (!args[0] || !work[args[0]]) {
+                throw new Error(tr('noFile', args[0] || ''));
+            }
+            work[args[0]].forEach(function (line) { control.info(line); });
+        },
+
+        _ls: function () {
+            var names = Object.keys(this.historyView.work).sort();
+            if (names.length) {
+                this.info(names.join('  '));
+            }
+        },
+
+        _rm: function (args) {
+            var work = this.historyView.work;
+            if (!args[0] || !work[args[0]]) {
+                throw new Error(tr('noFile', args[0] || ''));
+            }
+            delete work[args[0]];
+        },
+
+        _mv: function (args) {
+            var work = this.historyView.work;
+            if (!args[0] || !work[args[0]] || !args[1]) {
+                throw new Error(tr('noFile', args[0] || ''));
+            }
+            work[args[1]] = work[args[0]];
+            delete work[args[0]];
         },
 
         _run: function (split) {
             var hv = this.historyView;
 
             if (split[0] === 'edit') {
-                if (hv.status === 'clean') {
-                    hv.setStatus('unstaged');
+                // without files: the abstract change of 0.2.0; with files: one more line
+                if (!split[1] && !hv.hasFiles()) {
+                    if (hv.status === 'clean') {
+                        hv.setStatus('unstaged');
+                    }
+                } else {
+                    var name = split[1] || 'file.txt',
+                        old = hv.work[name] || [];
+                    hv.work[name] = old.concat(['change ' + (old.length + 1)]);
                 }
                 return this.info(tr('edited'));
+            }
+
+            if (SHELL.indexOf(split[0]) > -1) {
+                return this['_' + split[0]](split.slice(1));
             }
 
             if (split[0] === 'cd') {
@@ -243,13 +317,18 @@ function controlBoxFactory() {
         },
 
         commit: function (args) {
-            var amend = false, message,
+            var amend = false, all = false, allowEmpty = false, message,
                 flags = ['--amend', '-a', '--all', '--allow-empty', '--no-edit'];
 
             while (args.length > 0) {
                 var arg = args.shift();
                 if (arg === '-m' || arg === '-am' || arg === '--message') {
+                    all = all || arg === '-am';
                     message = takeMessage(args, flags);
+                } else if (arg === '-a' || arg === '--all') {
+                    all = true;
+                } else if (arg === '--allow-empty') {
+                    allowEmpty = true;
                 } else if (arg === '--amend') {
                     amend = true;
                 } else if (arg !== '-a' && arg !== '--all' && arg !== '--allow-empty' && arg !== '--no-edit') {
@@ -257,10 +336,18 @@ function controlBoxFactory() {
                 }
             }
 
+            var hv = this.historyView;
+            if (all && hv.hasFiles()) {
+                hv.stageTracked();
+            }
+            if (!amend && !allowEmpty && !hv.squashPending && hv.hasFiles() && sameTree(hv.index, hv.headTree())) {
+                throw new Error(tr('statusNothing'));
+            }
+
             if (amend) {
-                this.historyView.amend(message);
+                hv.amend(message);
             } else {
-                this.historyView.commit({}, message);
+                hv.commit({}, message);
             }
         },
 
@@ -460,11 +547,60 @@ function controlBoxFactory() {
         },
 
         add: function (args) {
+            var hv = this.historyView;
             if (args.length === 0) {
                 throw new Error(tr('needPath'));
             }
-            if (this.historyView.status === 'unstaged') {
-                this.historyView.setStatus('staged');
+            if (!hv.hasFiles()) {
+                if (hv.status === 'unstaged') {
+                    hv.setStatus('staged');
+                }
+                return;
+            }
+            var paths = hv.pathsFor(args);
+            paths.forEach(function (p) {
+                if (hv.work[p]) {
+                    hv.index[p] = clone(hv.work[p]);
+                } else {
+                    delete hv.index[p];
+                }
+            });
+        },
+
+        // git rm [--cached] <path>  (git rm without files: unknown, as in 0.2.0)
+        rm: function (args) {
+            var hv = this.historyView,
+                cached = args.indexOf('--cached') > -1,
+                paths = args.filter(function (a) { return a.charAt(0) !== '-'; });
+            if (!paths.length) {
+                throw new Error(tr('needPath'));
+            }
+            paths.forEach(function (p) {
+                if (!hv.index[p]) {
+                    throw new Error(tr('noMatch', p));
+                }
+            });
+            paths.forEach(function (p) {
+                delete hv.index[p];
+                if (!cached) {
+                    delete hv.work[p];
+                }
+            });
+        },
+
+        mv: function (args) {
+            var hv = this.historyView, from = args[0], to = args[1];
+            if (!from || !to) {
+                throw new Error(tr('needPath'));
+            }
+            if (!hv.index[from]) {
+                throw new Error(tr('noMatch', from));
+            }
+            hv.index[to] = hv.index[from];
+            delete hv.index[from];
+            if (hv.work[from]) {
+                hv.work[to] = hv.work[from];
+                delete hv.work[from];
             }
         },
 
@@ -482,8 +618,29 @@ function controlBoxFactory() {
             }
         },
 
-        status: function () {
-            this.info(tr('status_' + this.historyView.status));
+        status: function (args) {
+            var hv = this.historyView, control = this;
+            if (!hv.hasFiles()) {
+                return this.info(tr('status_' + hv.status));
+            }
+            var files = hv.fileStatus();
+            if (args && (args.indexOf('-s') > -1 || args.indexOf('--short') > -1)) {
+                return files.forEach(function (f) { control.info(tr('shortLine', f.x + f.y, f.path)); });
+            }
+            var kinds = { A: 'fileNew', M: 'fileModified', D: 'fileDeleted' },
+                section = function (title, list, line) {
+                    if (list.length) {
+                        control.info(tr(title));
+                        list.forEach(function (f) { control.info(line(f)); });
+                    }
+                };
+            section('statusUnmerged', files.filter(function (f) { return f.x === 'U'; }), function (f) { return tr('fileBoth', f.path); });
+            section('statusStaged', files.filter(function (f) { return kinds[f.x]; }), function (f) { return tr(kinds[f.x], f.path); });
+            section('statusUnstaged', files.filter(function (f) { return kinds[f.y]; }), function (f) { return tr(kinds[f.y], f.path); });
+            section('statusUntracked', files.filter(function (f) { return f.y === '?'; }), function (f) { return tr('pathLine', f.path); });
+            if (!files.length) {
+                this.info(tr('statusNothing'));
+            }
         },
 
         // worktree add [-b <new>] [--detach] <path> [<commit-ish>] | list | remove [--force] <path>
@@ -1178,6 +1335,7 @@ function historyViewFactory(d3) {
             commit = commitData[i];
             !commit.parent && (commit.parent = ROOT);
             !commit.tags && (commit.tags = []);
+            !commit.tree && (commit.tree = {});
         }
 
         this.name = config.name || 'UnnamedHistoryView';
@@ -1198,7 +1356,9 @@ function historyViewFactory(d3) {
 
         this.isRemote = typeof config.remoteName === 'string';
         this.remotes = config.remotes || ['origin'];
-        this.status = 'clean'; // working tree: clean, staged or unstaged
+        this._legacyStatus = 'clean'; // working tree without files (0.2.0): clean, staged or unstaged
+        this.index = {};                // files of the active worktree: path -> lines
+        this.work = {};
         this.stashes = [];      // commit ids, newest first
         this.upstream = {};     // branch -> remote tracking branch, set by push -u / branch -u
         // worktrees: the active one lives in currentBranch, HEAD and status
@@ -1208,6 +1368,7 @@ function historyViewFactory(d3) {
 
         this.initialCommit = {
             id: ROOT,
+            tree: {},
             parent: null,
             cx: -(this.commitRadius * 2),
             cy: this.baseLine
@@ -1777,11 +1938,99 @@ function historyViewFactory(d3) {
             this._markBranchlessCommits();
         },
 
-        setStatus: function (status) {
-            this.status = status;
-            if (this.svg) {
-                this.svg.select('text.status-display').text(tr('status_' + status));
+        // with files the state comes from HEAD, index and working tree, else from the 0.2.0 switch
+        get status() {
+            if (!this.hasFiles()) {
+                return this._legacyStatus;
             }
+            var files = this.fileStatus();
+            if (files.some(function (f) { return f.x === 'U'; })) {
+                return 'conflict';
+            }
+            if (files.some(function (f) { return f.y !== ' '; })) {
+                return 'unstaged';
+            }
+            return files.length ? 'staged' : 'clean';
+        },
+
+        setStatus: function (status) {
+            this._legacyStatus = status;
+            this.showStatus();
+        },
+
+        showStatus: function () {
+            if (this.svg) {
+                this.svg.select('text.status-display').text(tr('status_' + this.status));
+            }
+        },
+
+        headTree: function () {
+            var head = this.getCommit('HEAD');
+            return (head && head.tree) || {};
+        },
+
+        hasFiles: function () {
+            return Object.keys(this.index).length > 0 || Object.keys(this.work).length > 0 ||
+                this.commitData.some(function (c) { return c.tree && Object.keys(c.tree).length > 0; });
+        },
+
+        // like git status --short: x = index against HEAD, y = working tree against index
+        fileStatus: function () {
+            var head = this.headTree(), index = this.index, work = this.work,
+                paths = Object.keys(head).concat(Object.keys(index), Object.keys(work))
+                    .filter(function (p, i, all) { return all.indexOf(p) === i; }).sort();
+
+            return paths.map(function (p) {
+                var h = head[p], i = index[p], w = work[p], x = ' ', y = ' ';
+                if (i && !Array.isArray(i)) {
+                    return { path: p, x: 'U', y: 'U' };
+                }
+                if (!h && !i) {
+                    x = '?';
+                } else if (!h) {
+                    x = 'A';
+                } else if (!i) {
+                    x = 'D';
+                } else if (!sameLines(h, i)) {
+                    x = 'M';
+                }
+                if (!i) {
+                    y = w ? '?' : ' ';
+                } else if (!w) {
+                    y = 'D';
+                } else if (!sameLines(i, w)) {
+                    y = 'M';
+                }
+                return { path: p, x: x, y: y };
+            }).filter(function (f) { return f.x !== ' ' || f.y !== ' '; });
+        },
+
+        // git add . / -A / <paths>: every path named must exist somewhere
+        pathsFor: function (args) {
+            var index = this.index, work = this.work,
+                all = Object.keys(index).concat(Object.keys(work))
+                    .filter(function (p, i, list) { return list.indexOf(p) === i; }).sort();
+            if (args.some(function (a) { return a === '.' || a === '-A' || a === '--all'; })) {
+                return all;
+            }
+            return args.filter(function (a) { return a.charAt(0) !== '-'; }).map(function (p) {
+                if (all.indexOf(p) === -1) {
+                    throw new Error(tr('noMatch', p));
+                }
+                return p;
+            });
+        },
+
+        // commit -a: tracked files take their working tree content
+        stageTracked: function () {
+            var index = this.index, work = this.work;
+            Object.keys(index).forEach(function (p) {
+                if (work[p]) {
+                    index[p] = clone(work[p]);
+                } else {
+                    delete index[p];
+                }
+            });
         },
 
         _setCurrentBranch: function (branch) {
@@ -1910,6 +2159,8 @@ function historyViewFactory(d3) {
             current.branch = this.currentBranch;
             current.head = this.getCommit('HEAD').id;
             current.status = this.status;
+            current.index = this.index;
+            current.work = this.work;
             current.previous = this.previousBranch;
             current.squash = this.squashPending;
 
@@ -1917,12 +2168,15 @@ function historyViewFactory(d3) {
             this.currentBranch = next.branch;
             this.previousBranch = next.previous || null;
             this.squashPending = next.squash || null;
+            this.index = next.index || {};
+            this.work = next.work || {};
             this.checkout(next.branch || next.head);
             this.setStatus(next.status);
         },
 
         addWorktree: function (path, branch, head) {
-            this.worktrees.push({ path: normPath(path), branch: branch, head: head, status: 'clean' });
+            var tree = this.getCommit(head).tree;
+            this.worktrees.push({ path: normPath(path), branch: branch, head: head, status: 'clean', index: clone(tree), work: clone(tree) });
             this._setCurrentBranch(this.currentBranch);
             this.renderTags();
         },
@@ -2017,6 +2271,9 @@ function historyViewFactory(d3) {
             !commit.tags && (commit.tags = []);
 
             commit.message = message;
+            if (!commit.tree) {
+                commit.tree = clone(this.index);
+            }
             if (this.squashPending && !commit.parent2) {
                 commit.squashOf = this.squashPending;
             }

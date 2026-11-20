@@ -121,6 +121,7 @@ export function viewInfo(hv) {
     branch: hv.currentBranch,
     head: headCommit ? headCommit.id : null,
     status: hv.status || 'clean',
+    files: JSON.parse(JSON.stringify({ head: hv.headTree(), index: hv.index, work: hv.work })),
     // [path, branch, head] of every worktree, by path
     worktrees: hv.worktrees
       .map((w, i) => [w.path, i === hv.active ? hv.currentBranch : w.branch, hv.worktreeHead(i)])

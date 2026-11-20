@@ -2023,6 +2023,95 @@ function controlBoxFactory() {
             hv.highlight(hv.operation.todo.map(function (t) { return t.id; }));
         },
 
+        // bisect start [<bad> [<good>...]] | bad/new | good/old | skip [<rev>...] | reset | log
+        bisect: function (args) {
+            var hv = this.historyView, control = this, sub = args[0], st = hv.bisectState,
+                rest = args.slice(1).filter(function (a) { return a !== '--'; }),
+                resolve = function (r) {
+                    var c = hv.getCommit(r);
+                    if (!c || c.id === ROOT) {
+                        throw new Error(tr('noRef', r));
+                    }
+                    return c.id;
+                },
+                mark = function (kind, id) {
+                    if (kind === 'bad') {
+                        st.bad = id;
+                    } else {
+                        st[kind].push(id);
+                    }
+                    st.log.push('git bisect ' + kind + ' ' + id);
+                };
+            if (sub === 'start') {
+                if (st) {
+                    throw new Error(tr('bisectRunning'));
+                }
+                var revs = rest.map(resolve);
+                st = hv.bisectState = { orig: { branch: hv.currentBranch, head: hv.getCommit('HEAD').id }, bad: null, good: [], skip: [], log: ['git bisect start'] };
+                if (revs[0]) {
+                    mark('bad', revs[0]);
+                }
+                revs.slice(1).forEach(function (id) { mark('good', id); });
+                return this._bisectNext();
+            }
+            if (!st) {
+                throw new Error(tr('bisectNotStarted'));
+            }
+            if (sub === 'reset') {
+                this._changeBranch(st.orig.branch || st.orig.head, st.orig.branch ? {} : { detach: true });
+                hv.bisectState = null;
+                return hv.renderBisect();
+            }
+            if (sub === 'log') {
+                return st.log.forEach(function (l) { control.plain(l); });
+            }
+            var kind = { bad: 'bad', 'new': 'bad', good: 'good', old: 'good', skip: 'skip' }[sub];
+            if (!kind) {
+                throw new Error(tr('bisectUsage'));
+            }
+            (rest.length ? rest : ['HEAD']).map(resolve).forEach(function (id) { mark(kind, id); });
+            this._bisectNext();
+        },
+
+        // like git: test the commit that splits the candidates best (first one in revList order on a tie)
+        _bisectNext: function () {
+            var hv = this.historyView, st = hv.bisectState, control = this;
+            hv.renderBisect();
+            if (!st.bad || !st.good.length) {
+                return this.info(tr('bisectWaiting'));
+            }
+            var cands = hv.revList([st.bad], st.good), all = cands.length;
+            if (all <= 1) {
+                var c = hv.getCommit(st.bad);
+                this.plain(c.id + ' is the first bad commit');
+                this.diffLine('commit ' + c.id, 'commit');
+                this._author(c, 'ctx');
+                return this.diffLine('    ' + (c.message || ''), 'ctx');
+            }
+            var best = null;
+            cands.forEach(function (c) {
+                if (c.id === st.bad || st.skip.indexOf(c.id) > -1) {
+                    return;
+                }
+                var w = cands.filter(function (x) { return hv.isAncestor(x, c); }).length,
+                    score = Math.min(w, all - w);
+                if (!best || score > best.score) {
+                    best = { commit: c, w: w, score: score };
+                }
+            });
+            if (!best) {
+                this.info(tr('bisectOnlySkipped'));
+                return cands.forEach(function (c) { control.plain(c.id); });
+            }
+            this._changeBranch(best.commit.id, { detach: true });
+            hv.renderBisect();
+            var left = all - best.w - 1,
+                n = Math.floor(Math.log2(all)), e = Math.pow(2, n),
+                steps = all < 3 ? 0 : (e < 3 * (all - e) ? n : n - 1);
+            this.plain('Bisecting: ' + left + ' revision' + (left === 1 ? '' : 's') + ' left to test after this (roughly ' +
+                steps + ' step' + (steps === 1 ? '' : 's') + ')');
+        },
+
         // remote [-v] | add <name> <url> | rename <old> <new> | remove <name> | show <name>
         remote: function (args) {
             var control = this, hv = this.historyView, sub = args[0],
@@ -2714,6 +2803,7 @@ function historyViewFactory(d3) {
         this.tagInfo = Object.create(null); // annotated tags: name -> {message}
         this.reflog = Object.create(null);  // ref -> [{id, msg}], newest first; HEAD per worktree
         this.operation = null;  // merge/cherry-pick/revert/rebase that stopped at a conflict
+        this.bisectState = null; // git bisect: {orig, bad, good, skip, log}
         this.upstream = Object.create(null); // branch -> remote tracking branch, set by push -u / branch -u
         // worktrees: the active one lives in currentBranch, HEAD and status
         this.worktrees = [{ path: '.', branch: this.currentBranch, head: null, status: 'clean' }];
@@ -3795,6 +3885,18 @@ function historyViewFactory(d3) {
             }
 
             return inTree;
+        },
+
+        // commits marked good/bad/skip during git bisect
+        renderBisect: function () {
+            var st = this.bisectState;
+            if (!this.svg) {
+                return;
+            }
+            this.svg.selectAll('circle.commit')
+                .classed('bisect-bad', function (d) { return !!st && st.bad === d.id; })
+                .classed('bisect-good', function (d) { return !!st && st.good.indexOf(d.id) > -1; })
+                .classed('bisect-skip', function (d) { return !!st && st.skip.indexOf(d.id) > -1; });
         },
 
         findWorktree: function (path) {

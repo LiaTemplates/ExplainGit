@@ -361,6 +361,21 @@
     stroke-width: 6;
 }
 
+/* git bisect: commits marked bad, good or skipped */
+.explaingit circle.commit.bisect-bad {
+    stroke: #C62828;
+    stroke-width: 6;
+}
+
+.explaingit circle.commit.bisect-good {
+    stroke: #1565C0;
+    stroke-width: 6;
+}
+
+.explaingit circle.commit.bisect-skip {
+    stroke-dasharray: 4 3;
+}
+
 /* annotated tags: a tag object with a message */
 .explaingit g.branch-tag.git-tag.annotated > rect {
     stroke-width: 3;

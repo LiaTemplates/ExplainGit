@@ -31,6 +31,7 @@ export const SCRIPTS = [
   { name: 'tracking', opts: { origin: true }, cmds: ['@origin git switch -c serverfix', '@origin git commit -m fix', 'git fetch', 'git switch serverfix', 'git commit -m more', 'git push origin +serverfix:awesome', 'git fetch origin master:refs/remotes/origin/mine'] },
   { name: 'autosquash', cmds: ['echo a > f', 'git add f', 'git commit -m base', 'git switch -c t', 'echo b >> f', 'git commit -am b', 'echo c >> f', 'git commit -a --fixup HEAD', 'git rebase --autosquash master', 'git switch master', 'git merge --no-ff t', 'git revert -m 1 HEAD'] },
   { name: 'rebase-i', cmds: ['echo a > f', 'git add f', 'git commit -m base', 'echo 1 > one', 'git add one', 'git commit -m one', 'echo 2 > two', 'git add two', 'git commit -m two', 'echo 3 > three', 'git add three', 'git commit -m three', 'git rebase -i HEAD~3', 'move 3 1', 'squash 3', 'edit 2', ':wq', 'git commit --amend -m changed', 'git rebase --continue'] },
+  { name: 'bisect', cmds: ['echo 0 > f', 'git add f', 'git commit -m c0', 'echo 1 >> f', 'git commit -am c1', 'echo 2 >> f', 'git commit -am c2', 'echo 3 >> f', 'git commit -am c3', 'echo 4 >> f', 'git commit -am c4', 'git bisect start HEAD HEAD~4', 'git bisect bad', 'git bisect skip', 'git bisect good', 'git bisect log', 'git bisect reset'] },
 ]
 
 // graph, file contents, index and working tree; also in another language

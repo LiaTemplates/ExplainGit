@@ -1,7 +1,7 @@
 <!--
 author:   Yannik Höll
 email:    labruzzler@gmail.com
-version:  0.6.0
+version:  0.7.0
 edit:     true
 language: en
 narrator: US English Female
@@ -61,7 +61,7 @@ the right state, and let a whole classroom work on one repository together.
 
 Import the template into your course (pinned version or latest):
 
-`import: https://raw.githubusercontent.com/LiaTemplates/ExplainGit/0.6.0/README.md`
+`import: https://raw.githubusercontent.com/LiaTemplates/ExplainGit/0.7.0/README.md`
 
 `import: https://raw.githubusercontent.com/LiaTemplates/ExplainGit/master/README.md`
 
@@ -431,6 +431,59 @@ git log -L 2,2:bread
 ```
 
 
+## Git objects
+
+Git stores three kinds of objects: a __blob__ holds the content of a file, a
+__tree__ lists file names with their blobs, a __commit__ points to a tree, its
+parents, the author and the message. `git cat-file -p` shows any of them; the
+files table under the graph shows the blob of every file and the tree of `HEAD`
+and of the index, and a commit's tooltip shows its tree. The ids are short and
+made up, but like in git, the same content always gets the same id.
+
+``` text  @ExplainGit.eval
+echo "version 1" > test.txt
+git add test.txt
+git commit -m "first commit"
+git cat-file -p HEAD
+git cat-file -p HEAD^{tree}
+git cat-file -p HEAD:test.txt
+git count-objects -v
+```
+
+The porcelain commands are built from plumbing commands: `git update-index`,
+`git write-tree`, `git commit-tree` and `git update-ref` make a commit by hand.
+
+__Try it:__ Make a commit of `test.txt` on `master` with plumbing commands only
+(`update-index --add`, `write-tree`, `commit-tree <tree> -p HEAD -m "…"`,
+`update-ref refs/heads/master <commit>`). The check looks at the result.
+
+``` text  @ExplainGit.quiz
+echo "version 1" > test.txt
+---
+git add test.txt
+git commit -m "first commit"
+```
+
+
+## Ignoring files
+
+A file `.gitignore` lists patterns, one per line: `*.log` ignores every log file,
+`build/` everything in the folder `build`, `!keep.log` takes one file back, and
+`#` starts a comment. Ignored files are left out of `git status`, `git add .` and
+`git clean` (unless `-x`). Files git already tracks stay tracked.
+
+``` text  @ExplainGit.eval
+echo "*.log" > .gitignore
+echo "build/" >> .gitignore
+echo "error" > debug.log
+echo "binary" > build/app
+echo "notes" > notes.txt
+git status -s
+git check-ignore -v debug.log
+git add .
+```
+
+
 ## Modern git
 
 `git switch`, `git restore`, `git stash`, `git cherry-pick`, `git commit --amend`
@@ -635,12 +688,16 @@ never translated.
 | `git commit --fixup <c>` / `--squash <c>`, `git rebase --autosquash <base>`, `git revert -m <n> <merge>` | |
 | `git bisect start [<bad> [<good>]]`, `good`, `bad`, `skip`, `log`, `reset` | |
 | `git blame [-L a,b] [<rev>] <file>`, `git grep [-n] [-c] <text> [<rev>]`, `git log -L <a>,<b>:<file>` | `grep` searches plain text |
+| `git cat-file -t / -p / -s <object>`, `git hash-object [-w] <file>`, `git ls-files [-s]`, `git ls-tree <tree-ish>` | `<rev>^{tree}`, `<rev>:<path>`, blob and tree ids |
+| `git update-index --add <file>`, `git write-tree`, `git commit-tree <tree> [-p <parent>] -m "…"`, `git update-ref [-d] refs/heads/<b> [<rev>]`, `git symbolic-ref HEAD [refs/heads/<b>]`, `git show-ref` | plumbing |
+| `git count-objects [-v]`, `git gc` | `gc` packs what is reachable |
+| `.gitignore`, `git check-ignore [-v] <path>`, `git add -f`, `git clean -x / -X` | |
 | `git config user.name <n>`, `git commit --author="<n>"` | the author of a commit |
 | `git init -b <name>` | only as the first line of a code block |
 
 Revisions like `HEAD^`, `main~2`, `HEAD^2`, `@{u}` and `HEAD@{2}` work
 everywhere. Files are small text files without folders. Not included yet:
-`rebase -i --root`, `.gitignore`, plumbing commands.
+`rebase -i --root`, folders as objects, nested `.gitignore` files.
 
 
 ## Implementation

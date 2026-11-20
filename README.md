@@ -1,7 +1,7 @@
 <!--
 author:   Yannik Höll
 email:    labruzzler@gmail.com
-version:  0.5.0
+version:  0.6.0
 edit:     true
 language: en
 narrator: US English Female
@@ -61,7 +61,7 @@ the right state, and let a whole classroom work on one repository together.
 
 Import the template into your course (pinned version or latest):
 
-`import: https://raw.githubusercontent.com/LiaTemplates/ExplainGit/0.5.0/README.md`
+`import: https://raw.githubusercontent.com/LiaTemplates/ExplainGit/0.6.0/README.md`
 
 `import: https://raw.githubusercontent.com/LiaTemplates/ExplainGit/master/README.md`
 
@@ -308,6 +308,129 @@ git describe
 ```
 
 
+## Rewriting history
+
+`git rebase -i <base>` opens the todo list in the console, oldest commit first.
+There is no editor: change the list line by line, then start the rebase with
+`:wq` (or cancel it with `:q!`).
+
+* `squash 2`, `fixup 3`, `drop 1`, `pick 1`: the action for a line (number or commit id)
+* `reword 2 "better message"`: a new message
+* `edit 2`: stop there, for `git commit --amend` or to split the commit
+  (`git reset HEAD^`, then several commits), then `git rebase --continue`
+* `move 3 1`: put line 3 first
+
+`git commit --fixup <commit>` makes a commit that `git rebase --autosquash <base>`
+folds into its target.
+
+``` text  @ExplainGit.eval
+echo flour > bread
+git add bread
+git commit -m flour
+echo water >> bread
+git commit -am water
+echo salt >> bread
+git commit -am "salt"
+echo yeast >> bread
+git commit -am "forgot yeast"
+git rebase -i HEAD~3
+squash 3
+reword 2 "water and salt"
+:wq
+```
+
+__Try it:__ Make one commit out of the last three. The files must stay as they are.
+
+``` text  @ExplainGit.quiz
+echo a > f
+git add f
+git commit -m base
+echo 1 > one
+git add one
+git commit -m one
+echo 2 > two
+git add two
+git commit -m two
+echo 3 > three
+git add three
+git commit -m three
+---
+git reset --soft HEAD~3
+git commit -m "one, two and three"
+```
+
+
+## Finding bugs
+
+`git bisect` finds the commit that brought in a bug by halving the history. Start
+it with a bad and a good commit; git checks out the commit in the middle, you say
+`git bisect good` or `git bisect bad`, until git names the first bad commit. Good
+commits are marked blue, bad ones red. `git bisect reset` brings you back.
+
+``` text  @ExplainGit.eval
+echo flour > bread
+git add bread
+git commit -m flour
+echo water >> bread
+git commit -am water
+echo yeast >> bread
+git commit -am yeast
+echo sand >> bread
+git commit -am "fine sugar"
+echo salt >> bread
+git commit -am salt
+echo seeds >> bread
+git commit -am seeds
+git bisect start HEAD HEAD~5
+git bisect bad
+git bisect good
+```
+
+__Try it:__ One commit put sand into the bread. Find it with `git bisect` (`cat bread`
+shows the file), tag it `sand`, and end with `git bisect reset`.
+
+``` text  @ExplainGit.quiz
+echo flour > bread
+git add bread
+git commit -m flour
+echo water >> bread
+git commit -am water
+echo yeast >> bread
+git commit -am yeast
+echo sand >> bread
+git commit -am "fine sugar"
+echo salt >> bread
+git commit -am salt
+echo seeds >> bread
+git commit -am seeds
+---
+git tag sand HEAD~2
+```
+
+
+## Who wrote this line
+
+`git blame <file>` shows for every line the commit and author that brought it in,
+`git grep <text> [<rev>]` searches the files, and `git log -L <a>,<b>:<file>` shows
+every commit that changed these lines.
+
+``` text  @ExplainGit.eval
+git config user.name Ann
+echo flour > bread
+echo water >> bread
+git add bread
+git commit -m start
+git config user.name Bob
+echo flour > bread
+echo milk >> bread
+echo salt >> bread
+git commit -am milk
+git blame bread
+git grep -n salt
+git log -L 2,2:bread
+```
+
+
 ## Modern git
 
 `git switch`, `git restore`, `git stash`, `git cherry-pick`, `git commit --amend`
@@ -508,12 +631,16 @@ never translated.
 | `git push [-u] [--force-with-lease / -f] [--tags / --follow-tags] [<remote> [+]<b or tag>[:<dst>]]`, `git push <remote> --delete <b or tag>` | needs a remote |
 | `git switch <b>` / `git checkout <b>` when only `<remote>/<b>` exists, `git checkout --track <remote>/<b>` | a local branch that follows it |
 | `@<repository> <command>` | runs in another repository of the course |
+| `git rebase -i [--autosquash] <base>`, then `pick/reword/edit/squash/fixup/drop <line>`, `move <line> <n>`, `:wq`, `:q!` | interactive rebase without an editor |
+| `git commit --fixup <c>` / `--squash <c>`, `git rebase --autosquash <base>`, `git revert -m <n> <merge>` | |
+| `git bisect start [<bad> [<good>]]`, `good`, `bad`, `skip`, `log`, `reset` | |
+| `git blame [-L a,b] [<rev>] <file>`, `git grep [-n] [-c] <text> [<rev>]`, `git log -L <a>,<b>:<file>` | `grep` searches plain text |
 | `git config user.name <n>`, `git commit --author="<n>"` | the author of a commit |
 | `git init -b <name>` | only as the first line of a code block |
 
 Revisions like `HEAD^`, `main~2`, `HEAD^2`, `@{u}` and `HEAD@{2}` work
 everywhere. Files are small text files without folders. Not included yet:
-interactive rebase, `bisect`, `blame`, `.gitignore`.
+`rebase -i --root`, `.gitignore`, plumbing commands.
 
 
 ## Implementation

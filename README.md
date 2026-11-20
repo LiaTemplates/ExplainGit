@@ -1,7 +1,7 @@
 <!--
 author:   Yannik Höll
 email:    labruzzler@gmail.com
-version:  0.2.0
+version:  0.3.0
 edit:     true
 language: en
 narrator: US English Female
@@ -61,7 +61,7 @@ the right state, and let a whole classroom work on one repository together.
 
 Import the template into your course (pinned version or latest):
 
-`import: https://raw.githubusercontent.com/LiaTemplates/ExplainGit/0.2.0/README.md`
+`import: https://raw.githubusercontent.com/LiaTemplates/ExplainGit/0.3.0/README.md`
 
 `import: https://raw.githubusercontent.com/LiaTemplates/ExplainGit/master/README.md`
 
@@ -84,9 +84,9 @@ Based on [explain-git-with-d3](https://github.com/onlywei/explain-git-with-d3)
 `@ExplainGit.eval` below a code block runs its commands first, one per line.
 Empty lines and lines starting with `#` are skipped. A line `create origin` adds
 a remote repository named `origin`. A first line `git init -b main` names the
-first branch `main` instead of `master`. The command `edit` stands for changing a
-file, so `git add`, `git restore`, `git stash` and `git status` have something to
-work with.
+first branch `main` instead of `master`. Files are written like in a shell:
+`echo "text" > file.txt` and `echo "more" >> file.txt`; see the slide "Files and
+diff". Without files, `edit` stands for an abstract change.
 
 ```` markdown
 ``` text  @ExplainGit.eval
@@ -119,8 +119,9 @@ git commit -m "master commit"
 setup commands, a line `---`, and a solution. The check compares the learner's
 repository with the one the solution creates: the commits and how they are
 connected, every branch, tag and stash, where `HEAD` is, the state of the working
-tree and the other worktrees. Commit messages and the commands used do not
-matter, so every correct way is accepted. Without a `---`
+tree and the other worktrees. When the quiz uses files, their contents in every
+commit, in the index and in the working tree count too. Commit messages and the
+commands used do not matter, so every correct way is accepted. Without a `---`
 line all commands are the solution.
 
 "Show solution" replaces the learner's repository with the solution.
@@ -151,6 +152,88 @@ git commit
 git commit
 git checkout master
 git merge --no-ff feature
+```
+
+
+## Files and diff
+
+Repositories can hold small text files. Write them like in a shell, then use git
+as usual: `git add`, `git commit`, `git status`, `git diff`, `git show`,
+`git restore`, `git reset`, `git rm`, `git mv`, `git clean`. The table under the
+graph shows every file in `HEAD`, in the index and in the working tree, as a short
+id of its content; hover a cell to see the content. Yellow cells differ from the
+column to their left.
+
+``` text  @ExplainGit.eval
+echo "# Recipes" > README.md
+echo "flour" > bread.txt
+git add .
+git commit -m "first recipes"
+echo "water" >> bread.txt
+git add bread.txt
+echo "salt" >> bread.txt
+echo "draft" > todo.txt
+```
+
+Try `git status`, `git diff`, `git diff --staged` and `git restore --staged bread.txt`.
+
+__Try it:__ Add the line `yeast` to `bread.txt` and commit only this file.
+
+``` text  @ExplainGit.quiz
+echo flour > bread.txt
+git add bread.txt
+git commit -m bread
+echo draft > todo.txt
+---
+echo yeast >> bread.txt
+git add bread.txt
+git commit -m yeast
+```
+
+
+## Conflicts
+
+When two branches change the same lines, `git merge`, `git rebase`,
+`git cherry-pick` and `git stash pop` stop with a conflict. The file then holds
+both versions between `<<<<<<<`, `=======` and `>>>>>>>`. Write the right
+version, mark it with `git add` and continue with `git commit` (merge) or
+`--continue` (rebase, cherry-pick, revert). `--abort` goes back,
+`git checkout --ours/--theirs <file>` takes one side, and
+`git config merge.conflictstyle diff3` also shows the common base.
+
+``` text  @ExplainGit.eval
+echo "Hello" > greeting.txt
+git add .
+git commit -m start
+git switch -c dev
+echo "Servus" > greeting.txt
+git commit -am servus
+git switch master
+echo "Moin" > greeting.txt
+git commit -am moin
+git merge dev
+```
+
+Try `cat greeting.txt`, then `echo "Moin, Servus" > greeting.txt`,
+`git add greeting.txt` and `git commit`.
+
+__Try it:__ Merge `dev` into `master` and keep the line `Moin, Servus`.
+
+``` text  @ExplainGit.quiz
+echo "Hello" > greeting.txt
+git add .
+git commit -m start
+git switch -c dev
+echo "Servus" > greeting.txt
+git commit -am servus
+git switch master
+echo "Moin" > greeting.txt
+git commit -am moin
+---
+git merge dev
+echo "Moin, Servus" > greeting.txt
+git add greeting.txt
+git commit -m merged
 ```
 
 
@@ -250,17 +333,25 @@ never translated.
 | `git merge <b>`, `--no-ff`, `--ff-only`, `--squash` | |
 | `git rebase <upstream> [<b>]`, `--onto <base>`, `--update-refs` | |
 | `git cherry-pick <ref>...` | |
-| `git reset [--soft / --mixed / --hard] <ref>`, `git revert <ref>` | `--mixed` is the default, as in git |
-| `edit`, `git add <path>`, `git restore [--staged] <path>`, `git status` | working tree without real files |
-| `git stash [push]`, `pop`, `apply`, `drop`, `list` | |
+| `git reset [--soft / --mixed / --hard] <ref>`, `git reset [<ref>] -- <path>`, `git revert <ref>` | `--mixed` is the default, as in git |
+| `echo "text" > f`, `echo text >> f`, `cat f`, `ls`, `rm f`, `mv a b` | files in the working tree |
+| `git add <path> / . / -A`, `git rm [--cached]`, `git mv`, `git status [-s]` | |
+| `git diff [--staged] [<a> <b> / <a>..<b> / <a>...<b>] [--stat] [-- <path>]`, `git show [<ref>]` | |
+| `git restore [--staged] [--source=<ref>] <path>`, `git checkout [<ref>] -- <path>`, `git clean -n / -f` | |
+| `git merge --abort / --continue`, `git checkout --ours / --theirs <path>` | conflicts |
+| `git rebase / cherry-pick / revert --continue / --skip / --abort` | |
+| `git config <key> [<value>]`, `git config --list` | e.g. `merge.conflictstyle diff3`, `pull.rebase true` |
+| `edit [<file>]` | without files: an abstract change; with a file: one more line |
+| `git stash [push] [-u] [--keep-index] [-m msg]`, `pop`, `apply [--index]`, `drop`, `list`, `branch <b>` | |
 | `git worktree add [-b <b>] [--detach] <path> [<ref>]`, `list`, `remove [--force]` | |
 | `cd <path>`, `git -C <path> <command>` | `.` is the main worktree |
 | `git fetch [--prune]`, `git pull [--rebase / --ff-only]` | needs `create origin` |
 | `git push [-u] [--force-with-lease / -f] [origin <b>]`, `git push origin --delete <b>` | needs `create origin` |
 | `git init -b <name>` | only as the first line of a code block |
 
-Refs like `HEAD^`, `main~2` or `feature^^` work everywhere. Not included:
-interactive rebase, `switch --orphan`, `bisect`, real files.
+Refs like `HEAD^`, `main~2` or `feature^^` work everywhere. Files are small text
+files without folders. Not included yet: interactive rebase, `bisect`, `blame`,
+reflog, several remotes, `.gitignore`.
 
 
 ## Implementation

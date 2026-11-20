@@ -1,6 +1,6 @@
 {
   "name": "lia-explaingit",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "LiaScript template for ExplainGit: visualize git commands, check them in quizzes, work together in a classroom",
   "license": "GPL-3.0",
   "app": "dist/index.js",

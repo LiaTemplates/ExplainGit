@@ -29,6 +29,7 @@ export const SCRIPTS = [
   { name: 'branch info and alias', opts: { origin: true }, cmds: ['git commit -m a', 'git push', 'git commit -m b', 'git branch -vv', 'git config alias.co checkout', 'git co -b dev', 'git branch --merged master'] },
   { name: 'team', opts: { origin: true }, cmds: ['git commit -m start', 'git push', '@origin git config user.name Jessica', '@origin git commit -m j', 'git commit -m john', 'git push', 'git fetch', 'git merge origin/master', 'git push'] },
   { name: 'tracking', opts: { origin: true }, cmds: ['@origin git switch -c serverfix', '@origin git commit -m fix', 'git fetch', 'git switch serverfix', 'git commit -m more', 'git push origin +serverfix:awesome', 'git fetch origin master:refs/remotes/origin/mine'] },
+  { name: 'autosquash', cmds: ['echo a > f', 'git add f', 'git commit -m base', 'git switch -c t', 'echo b >> f', 'git commit -am b', 'echo c >> f', 'git commit -a --fixup HEAD', 'git rebase --autosquash master', 'git switch master', 'git merge --no-ff t', 'git revert -m 1 HEAD'] },
 ]
 
 // graph, file contents, index and working tree; also in another language

@@ -512,7 +512,7 @@ function controlBoxFactory() {
         },
 
         commit: function (args) {
-            var amend = false, all = false, allowEmpty = false, message, author,
+            var amend = false, all = false, allowEmpty = false, message, author, fold,
                 flags = ['--amend', '-a', '--all', '--allow-empty', '--no-edit'];
 
             while (args.length > 0) {
@@ -526,6 +526,14 @@ function controlBoxFactory() {
                     allowEmpty = true;
                 } else if (arg === '--amend') {
                     amend = true;
+                } else if (arg === '--fixup' || arg === '--squash' || /^--(fixup|squash)=/.test(arg)) {
+                    // a commit that rebase --autosquash folds into <c>
+                    var kind = arg.slice(2).split('=')[0],
+                        target = this.historyView.getCommit(arg.indexOf('=') > -1 ? arg.slice(arg.indexOf('=') + 1) : args.shift());
+                    if (!target || target.id === ROOT) {
+                        throw new Error(tr('noRef', arg));
+                    }
+                    fold = { kind: kind, subject: target.message || target.id };
                 } else if (arg.indexOf('--author=') === 0) {
                     // --author="Ann Smith" may come in several words
                     author = arg.slice(9);
@@ -549,6 +557,9 @@ function controlBoxFactory() {
             if (!amend && !allowEmpty && !hv.squashPending && !(hv.operation && hv.operation.type === 'merge') &&
                 hv.hasFiles() && sameTree(staged, hv.headTree())) {
                 throw new Error(tr(hv.fileStatus().some(function (f) { return f.y !== ' ' && f.y !== '?'; }) ? 'noChangesAdded' : 'statusNothing'));
+            }
+            if (fold) {
+                message = fold.kind + '! ' + fold.subject + (fold.kind === 'squash' && message ? ' / ' + message : '');
             }
             hv.index = staged;
             // git commit inside a stopped cherry-pick/revert/rebase finishes that step
@@ -1775,13 +1786,25 @@ function controlBoxFactory() {
         },
 
         revert: function (args) {
-            var hv = this.historyView,
-                ref = args.filter(function (a) { return a.charAt(0) !== '-'; })[0];
+            var hv = this.historyView, mainline = null, m = args.indexOf('-m');
             if (this._sequenceFlag('revert', args)) {
                 return;
             }
+            if (m > -1) {
+                mainline = Number(args[m + 1]);
+                args = args.slice(0, m).concat(args.slice(m + 2));
+            }
+            var ref = args.filter(function (a) { return a.charAt(0) !== '-'; })[0];
             if (!ref) {
                 throw new Error(tr('needRef'));
+            }
+            var target = hv.getCommit(ref);
+            // a merge has two sides: -m <n> says which parent stays
+            if (target && target.parent2 && mainline === null) {
+                throw new Error(tr('mergeNeedsMainline', target.id));
+            }
+            if (target && mainline !== null && (!target.parent2 || (mainline !== 1 && mainline !== 2))) {
+                throw new Error(target.parent2 ? tr('badMainline', args[m + 1] || '') : tr('notAMerge', target.id));
             }
             if (hv.hasFiles()) {
                 var commit = hv.getCommit(ref);
@@ -1791,7 +1814,7 @@ function controlBoxFactory() {
                 if (!hv.isAncestor(commit, 'HEAD')) {
                     throw new Error(tr('notAncestor', ref));
                 }
-                return this._printSequence('revert', hv.startSequence('revert', [{ id: commit.id, kind: 'revert' }]));
+                return this._printSequence('revert', hv.startSequence('revert', [{ id: commit.id, kind: 'revert', mainline: mainline || undefined }]));
             }
             hv.revert(ref);
         },
@@ -1890,6 +1913,8 @@ function controlBoxFactory() {
                     }
                 } else if (arg === '--update-refs') {
                     opt.updateRefs = true;
+                } else if (arg === '--autosquash') {
+                    opt.autosquash = true;
                 } else if (arg.charAt(0) !== '-') {
                     positional.push(arg);
                 }
@@ -3907,7 +3932,7 @@ function historyViewFactory(d3) {
         // a new commit with the parents of HEAD; the old one is no longer reachable
         amend: function (message) {
             var head = this.getCommit('HEAD'),
-                commit = { parent: head.parent };
+                commit = { parent: head.parent, author: head.author };
 
             if (head.parent === ROOT) {
                 throw new Error(tr('amendRoot'));
@@ -4228,8 +4253,8 @@ function historyViewFactory(d3) {
         },
 
         // the change one commit made (or its reverse) onto HEAD
-        applyCommit: function (commit, reverse) {
-            var parent = this.getCommit(commit.parent),
+        applyCommit: function (commit, reverse, mainline) {
+            var parent = this.getCommit(mainline === 2 ? commit.parent2 : commit.parent),
                 parentTree = (parent && parent.tree) || {},
                 label = commit.id + ' (' + (commit.message || '') + ')';
             return reverse
@@ -4283,17 +4308,17 @@ function historyViewFactory(d3) {
             } else {
                 this.checkout(base.id);
             }
-            this.index = clone(base.tree);
-            this.work = clone(base.tree);
+            this.index = clone(base.tree || {});
+            this.work = clone(base.tree || {});
             untracked.forEach(function (p) {
-                if (!base.tree[p]) {
+                if (!(base.tree || {})[p]) {
                     this.work[p] = untracked.files[p];
                 }
             }, this);
 
             this.operation = {
                 type: 'rebase',
-                todo: toRebase.map(function (c) { return { id: c.id, kind: 'rebase' }; }),
+                todo: this._todo(toRebase, opt.autosquash),
                 orig: orig,
                 before: before,
                 updateRefs: !!opt.updateRefs,
@@ -4302,12 +4327,40 @@ function historyViewFactory(d3) {
             return this._continueSequence();
         },
 
+        // the rebase todo, oldest first; with autosquash "fixup! <subject>" / "squash! <subject>"
+        // commits move right behind their target (and its earlier fixups)
+        _todo: function (commits, autosquash) {
+            var todo = [];
+            commits.forEach(function (c) {
+                var m = autosquash && /^(fixup|squash)! (.*)$/.exec(c.message || ''),
+                    item = { id: c.id, kind: 'rebase' },
+                    at = -1;
+                if (m) {
+                    todo.forEach(function (t, i) {
+                        var msg = this.getCommit(t.id).message || '';
+                        if (at === -1 && t.kind === 'rebase' && (m[2] === msg || m[2].indexOf(msg + ' / ') === 0 || t.id.indexOf(m[2]) === 0)) {
+                            at = i;
+                        }
+                    }, this);
+                }
+                if (at === -1) {
+                    return todo.push(item);
+                }
+                item.kind = m[1];
+                while (at + 1 < todo.length && (todo[at + 1].kind === 'fixup' || todo[at + 1].kind === 'squash')) {
+                    at++;
+                }
+                todo.splice(at + 1, 0, item);
+            }, this);
+            return todo;
+        },
+
         _continueSequence: function () {
             var op = this.operation, done = [];
             while (op.todo.length) {
                 var item = op.todo.shift(),
                     commit = this.getCommit(item.id),
-                    result = this.applyCommit(commit, item.kind === 'revert');
+                    result = this.applyCommit(commit, item.kind === 'revert', item.mainline);
                 if (result.conflicts.length) {
                     op.current = item;
                     return { conflicts: result.conflicts, at: commit, done: done };
@@ -4322,6 +4375,19 @@ function historyViewFactory(d3) {
             var commit = this.getCommit(item.id);
             if (item.kind === 'pick') {
                 this.commit({ cherryPickedFrom: commit.id, author: commit.author }, message || commit.message);
+            } else if (item.kind === 'fixup' || item.kind === 'squash') {
+                // into the commit before: fixup keeps its message, squash adds this one
+                var head = this.getCommit('HEAD'), text = commit.message || '';
+                if (item.kind === 'squash') {
+                    var sq = /^squash! (.*)$/.exec(text);
+                    if (sq) {
+                        text = sq[1] === head.message ? '' : sq[1].indexOf(head.message + ' / ') === 0 ? sq[1].slice(head.message.length + 3) : sq[1];
+                    }
+                }
+                this.amend(message || (item.kind === 'squash' && text ? head.message + ' / ' + text : head.message));
+                var now = this.getCommit('HEAD').id, map = this.operation.map;
+                Object.keys(map).forEach(function (k) { if (map[k] === head.id) { map[k] = now; } });
+                map[commit.id] = now;
             } else if (item.kind === 'revert') {
                 commit.reverted = true;
                 this.commit({ reverts: commit.id }, message || 'Revert "' + (commit.message || commit.id) + '"');
@@ -4448,7 +4514,7 @@ function historyViewFactory(d3) {
                 throw new Error(tr('noRef', opt.onto));
             }
 
-            if (!opt.onto) {
+            if (!opt.onto && !opt.autosquash) {
                 if (this.isAncestor(upstream, currentCommit)) {
                     return 'Up-To-Date';
                 }
@@ -4469,7 +4535,7 @@ function historyViewFactory(d3) {
                 return 'Fast-Forward';
             }
 
-            if (this.hasFiles()) {
+            if (this.hasFiles() || opt.autosquash) {
                 return this._rebaseFiles(base, toRebase, opt);
             }
 

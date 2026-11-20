@@ -137,6 +137,7 @@
 }
 
 .explaingit .control-box .log .diff-head { color: #FFF; font-weight: bold; }
+.explaingit .control-box .log .diff-commit { color: #FD4; }
 .explaingit .control-box .log .diff-hunk { color: #8CF; }
 .explaingit .control-box .log .diff-add { color: #8F8; }
 .explaingit .control-box .log .diff-del { color: #F88; }
@@ -348,4 +349,10 @@
 .explaingit-files td.conflict {
     background-color: rgba(255, 0, 0, 0.25);
     font-weight: bold;
+}
+
+/* commits listed by git log */
+.explaingit circle.commit.selected {
+    stroke: #D400A6;
+    stroke-width: 6;
 }

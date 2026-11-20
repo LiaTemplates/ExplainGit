@@ -239,6 +239,9 @@ function controlBoxFactory() {
 
             var split = entry.split(/\s+/);
             this._entry = entry;
+            if (this.historyView && this.historyView.svg) {
+                this.historyView.highlight([]);
+            }
 
             var line = this.log.append('div')
                 .classed('command-entry', true)
@@ -365,7 +368,8 @@ function controlBoxFactory() {
                 }
             }
 
-            var method = split[1],
+            // `log` is the console element of this object, so git log runs as gitLog
+            var method = split[1] === 'log' ? 'gitLog' : split[1],
                 args = split.slice(2);
 
             // only git commands, not the widget's own methods
@@ -1212,6 +1216,104 @@ function controlBoxFactory() {
                 this.info(tr('stoppedAt', result.at.id, result.at.message || ''));
                 this.info(tr('resolveHint', type));
             }
+        },
+
+        // log [--oneline] [--graph] [--all] [-n] [--merges/--no-merges] [--first-parent] [-p] [--stat]
+        //     [--left-right] [-S <text>] [<rev>... | <a>..<b> | <a>...<b> | ^<a> | --not <a>] [-- <path>]
+        gitLog: function (args) {
+            var hv = this.historyView, control = this,
+                dashes = args.indexOf('--'),
+                paths = dashes > -1 ? args.slice(dashes + 1) : [],
+                opts = dashes > -1 ? args.slice(0, dashes) : args.slice(),
+                o = { max: Infinity }, includes = [], excludes = [], not = false, left = null, right = null;
+
+            while (opts.length) {
+                var a = opts.shift(), n = /^-(\d+)$/.exec(a);
+                if (n) {
+                    o.max = Number(n[1]);
+                } else if (a === '-n' || a === '--max-count') {
+                    o.max = Number(opts.shift());
+                } else if (a === '-S') {
+                    o.pickaxe = opts.shift();
+                } else if (a === '--not') {
+                    not = !not;
+                } else if (a.charAt(0) === '-' && a.length > 1) {
+                    o[{ '--oneline': 'oneline', '--graph': 'graph', '--all': 'all', '--merges': 'merges', '--no-merges': 'noMerges',
+                        '--first-parent': 'firstParent', '-p': 'patch', '--patch': 'patch', '--stat': 'stat', '--left-right': 'leftRight' }[a] || 'ignored'] = true;
+                } else {
+                    var range = /^(.*?)(\.\.\.?)(.*)$/.exec(a);
+                    if (range && range[2] === '...') {
+                        left = range[1] || 'HEAD';
+                        right = range[3] || 'HEAD';
+                        includes.push(left, right);
+                    } else if (range) {
+                        excludes.push(range[1] || 'HEAD');
+                        includes.push(range[3] || 'HEAD');
+                    } else if (a.charAt(0) === '^') {
+                        excludes.push(a.slice(1));
+                    } else {
+                        (not ? excludes : includes).push(a);
+                    }
+                }
+            }
+            if (o.all) {
+                includes = includes.concat(hv.allRefs());
+            }
+            if (!includes.length) {
+                includes.push('HEAD');
+            }
+            includes.concat(excludes).forEach(function (r) {
+                if (!hv.getCommit(r)) {
+                    throw new Error(tr('noRef', r));
+                }
+            });
+
+            var side = {};
+            if (left) {
+                // symmetric difference: what only one side has, marked < or >
+                var l = hv.revList([left], [], o), r = hv.revList([right], [], o),
+                    inL = {}, inR = {};
+                l.forEach(function (c) { inL[c.id] = true; });
+                r.forEach(function (c) { inR[c.id] = true; });
+                Object.keys(inL).forEach(function (id) { if (inR[id]) { excludes.push(id); } });
+                l.forEach(function (c) { side[c.id] = '<'; });
+                r.forEach(function (c) { side[c.id] = side[c.id] ? null : '>'; });
+            }
+
+            var commits = hv.revList(includes, excludes, o).filter(function (c) {
+                var parent = hv.getCommit(c.parent), before = (parent && parent.tree) || {};
+                if (o.merges && !c.parent2) { return false; }
+                if (o.noMerges && c.parent2) { return false; }
+                if (paths.length && !paths.some(function (p) { return !sameLines(before[p], (c.tree || {})[p]); })) { return false; }
+                if (o.pickaxe) {
+                    var count = function (t) {
+                        return Object.keys(t).reduce(function (sum, p) {
+                            return sum + t[p].join('\n').split(o.pickaxe).length - 1;
+                        }, 0);
+                    };
+                    return count(before) !== count(c.tree || {});
+                }
+                return true;
+            }).slice(0, o.max);
+
+            commits.forEach(function (c) {
+                var decor = hv.decorations(c.id),
+                    mark = o.leftRight && side[c.id] ? side[c.id] + ' ' : o.graph ? '* ' : '';
+                if (o.oneline) {
+                    control.diffLine(mark + c.id + (decor ? ' (' + decor + ')' : '') + ' ' + (c.message || ''), 'commit');
+                } else {
+                    control.diffLine(mark + 'commit ' + c.id + (decor ? ' (' + decor + ')' : ''), 'commit');
+                    if (c.parent2) {
+                        control.diffLine('Merge: ' + hv.getCommit(c.parent).id + ' ' + c.parent2, 'ctx');
+                    }
+                    control.diffLine('    ' + (c.message || ''), 'ctx');
+                }
+                if (o.patch || o.stat) {
+                    var parent = hv.getCommit(c.parent);
+                    control._printDiff((parent && parent.tree) || {}, c.tree || {}, paths, o.stat && !o.patch);
+                }
+            });
+            hv.highlight(commits.map(function (c) { return c.id; }));
         },
 
         // rev-parse <rev>... / --abbrev-ref HEAD
@@ -2666,6 +2768,91 @@ function historyViewFactory(d3) {
         // reflog entries of a ref, newest first (HEAD@{0} is where it is now)
         reflogFor: function (ref) {
             return (this.reflog && this.reflog[ref]) || [];
+        },
+
+        // commits reachable from includes but not from excludes, children before parents,
+        // otherwise newest (last created) first; opt.firstParent follows only first parents
+        revList: function (includes, excludes, opt) {
+            var view = this, firstParent = opt && opt.firstParent,
+                parents = function (c) {
+                    return [c.parent].concat(firstParent || !c.parent2 ? [] : [c.parent2]);
+                },
+                walk = function (refs) {
+                    var seen = {}, todo = refs.map(function (r) { return view.getCommit(r); }), c;
+                    while (todo.length) {
+                        c = todo.pop();
+                        if (c && c.id !== ROOT && !seen[c.id]) {
+                            seen[c.id] = c;
+                            parents(c).forEach(function (p) { todo.push(view.getCommit(p)); });
+                        }
+                    }
+                    return seen;
+                },
+                out = walk(excludes),
+                set = walk(includes),
+                ids = Object.keys(set).filter(function (id) { return !out[id]; }),
+                order = {}, children = {}, list = [];
+            this.commitData.forEach(function (c, i) {
+                if (order[c.id] === undefined) {
+                    order[c.id] = i;
+                }
+            });
+            ids.forEach(function (id) { children[id] = 0; });
+            ids.forEach(function (id) {
+                parents(set[id]).forEach(function (p) {
+                    if (children[p] !== undefined) {
+                        children[p]++;
+                    }
+                });
+            });
+            while (list.length < ids.length) {
+                var next = ids.filter(function (id) { return children[id] === 0; })
+                    .sort(function (a, b) { return order[b] - order[a]; })[0];
+                children[next] = -1;
+                list.push(set[next]);
+                parents(set[next]).forEach(function (p) {
+                    if (children[p] > 0) {
+                        children[p]--;
+                    }
+                });
+            }
+            return list;
+        },
+
+        // every ref for --all: branches, remote branches, tags, stash, HEAD
+        allRefs: function () {
+            var refs = ['HEAD'];
+            this.commitData.forEach(function (c) {
+                c.tags.forEach(function (t) {
+                    if (t !== 'HEAD' && refs.indexOf(t) === -1) {
+                        refs.push(t);
+                    }
+                });
+            });
+            return refs.filter(function (r) { return r.indexOf('stash@{') !== 0 || r === 'stash@{0}'; });
+        },
+
+        // like git log --decorate: HEAD -> branch, branches, tags, remote branches
+        decorations: function (id) {
+            var view = this, commit = this.getCommit(id), head = this.getCommit('HEAD'),
+                tags = commit.tags.filter(function (t) { return t !== 'HEAD' && t.indexOf('stash@{') !== 0; }),
+                local = tags.filter(function (t) { return view.isLocalBranch(t) && t !== view.currentBranch; }).sort(),
+                labels = tags.filter(function (t) { return t.charAt(0) === '['; }).sort().map(function (t) { return 'tag: ' + t.slice(1, -1); }),
+                remote = tags.filter(function (t) { return view.isRemoteRef(t); }).sort(),
+                out = [];
+            if (head && head.id === id) {
+                out.push(this.currentBranch ? 'HEAD -> ' + this.currentBranch : 'HEAD');
+            } else if (this.currentBranch && tags.indexOf(this.currentBranch) > -1) {
+                out.push(this.currentBranch);
+            }
+            return out.concat(local, labels, remote).join(', ');
+        },
+
+        // log marks its commits in the graph until the next command
+        highlight: function (ids) {
+            if (this.svg) {
+                this.svg.selectAll('circle.commit').classed('selected', function (d) { return ids.indexOf(d.id) > -1; });
+            }
         },
 
         // the best common ancestor: common to both, and no other common ancestor is newer

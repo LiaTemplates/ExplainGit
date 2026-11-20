@@ -22,6 +22,7 @@ export const SCRIPTS = [
   { name: 'conflict', cmds: ['echo a > f', 'git add f', 'git commit', 'git switch -c dev', 'echo dev > f', 'git commit -am dev', 'git switch master', 'echo m > f', 'git commit -am m', 'git merge dev', 'git checkout --theirs f', 'git add f', 'git commit -m merged'] },
   { name: 'rebase with conflict', cmds: ['echo 1 > f', 'git add f', 'git commit', 'git switch -c t', 'echo T > f', 'git commit -am t', 'echo b > b', 'git add b', 'git commit -m b', 'git switch master', 'echo M > f', 'git commit -am m', 'git switch t', 'git rebase master', 'echo TM > f', 'git add f', 'git rebase --continue', 'git cherry-pick master', 'git revert HEAD'] },
   { name: 'stash with files', cmds: ['echo a > f', 'git add f', 'git commit', 'echo b >> f', 'echo u > u', 'git stash -u', 'git stash list', 'git stash pop', 'git add f', 'git stash --keep-index', 'git stash apply --index'] },
+  { name: 'log', cmds: ['git commit -m one', 'git switch -c dev', 'git commit -m d1', 'git switch master', 'git commit -m m1', 'git merge dev', 'git log --oneline --all', 'git log master..dev'] },
 ]
 
 // graph, file contents, index and working tree; also in another language

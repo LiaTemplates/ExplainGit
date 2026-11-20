@@ -15,6 +15,27 @@ var clone = function (tree) {
     return JSON.parse(JSON.stringify(tree || {}));
 };
 
+// set or delete one path of a tree
+var setPath = function (tree, path, lines) {
+    if (lines) {
+        tree[path] = JSON.parse(JSON.stringify(lines));
+    } else {
+        delete tree[path];
+    }
+};
+
+var allPaths = function () {
+    var paths = [];
+    for (var i = 0; i < arguments.length; i++) {
+        Object.keys(arguments[i] || {}).forEach(function (p) {
+            if (paths.indexOf(p) === -1) {
+                paths.push(p);
+            }
+        });
+    }
+    return paths.sort();
+};
+
 var sameTree = function (a, b) {
     var keys = Object.keys(a).concat(Object.keys(b));
     return keys.every(function (k) { return sameLines(a[k], b[k]); });
@@ -430,29 +451,54 @@ function controlBoxFactory() {
                 hv.checkFree(name);
             }
 
+            var target, start, exists = hv.isLocalBranch(name);
             if (opt.create) {
-                var start = hv.getCommit(opt.start || 'HEAD');
+                start = hv.getCommit(opt.start || 'HEAD');
                 if (!start) {
                     throw new Error(tr('noRef', opt.start));
                 }
-                if (!hv.isLocalBranch(name)) {
-                    hv.branch(name, start.id);
-                } else if (opt.force) {
-                    hv.moveTag(name, start.id);
-                } else if (!opt.lenient) {
-                    hv.branch(name); // throws "already exists"
+                if (exists && !opt.force && !opt.lenient) {
+                    hv._checkNewName(name); // throws "already exists"
                 }
+                target = exists && !opt.force ? hv.getCommit(name) : start;
             } else if (opt.detach) {
-                name = hv.getCommit(name || 'HEAD') ? hv.getCommit(name || 'HEAD').id : name;
-            } else if (opt.branchOnly && !hv.isLocalBranch(name)) {
-                throw new Error(hv.getCommit(name) ? tr('branchExpected', name) : tr('noRef', name));
+                target = hv.getCommit(name || 'HEAD');
+                if (!target) {
+                    throw new Error(tr('noRef', name));
+                }
+                name = target.id;
+            } else {
+                if (opt.branchOnly && !exists) {
+                    throw new Error(hv.getCommit(name) ? tr('branchExpected', name) : tr('noRef', name));
+                }
+                target = hv.getCommit(name);
+                if (!target) {
+                    throw new Error(tr('noCommit', name));
+                }
             }
 
+            // local changes must not be lost: check first, then change
+            hv.switchTrees(target.tree, true);
+            if (opt.create && !exists) {
+                hv.branch(name, start.id);
+            } else if (opt.create && opt.force) {
+                hv.moveTag(name, start.id);
+            }
+            hv.switchTrees(target.tree);
             hv.checkout(name);
         },
 
         checkout: function (args) {
-            var opt = { lenient: true }, name;
+            var opt = { lenient: true }, name,
+                hv = this.historyView,
+                dashes = args.indexOf('--');
+
+            if (dashes > -1) {
+                return this._checkoutPaths(args.slice(0, dashes).filter(function (a) { return a.charAt(0) !== '-'; })[0], args.slice(dashes + 1));
+            }
+            if (args.length === 1 && args[0] !== '-' && !hv.getCommit(args[0]) && args[0] in hv.index) {
+                return this._checkoutPaths(null, args);
+            }
 
             while (args.length > 0) {
                 var arg = args.shift();
@@ -522,9 +568,11 @@ function controlBoxFactory() {
         reset: function (args) {
             var hv = this.historyView,
                 mode = 'mixed',
-                ref = 'HEAD';
+                ref = 'HEAD',
+                dashes = args.indexOf('--'),
+                paths = dashes > -1 ? args.slice(dashes + 1) : [];
 
-            args.forEach(function (arg) {
+            (dashes > -1 ? args.slice(0, dashes) : args).forEach(function (arg) {
                 if (arg === '--soft' || arg === '--mixed' || arg === '--hard') {
                     mode = arg.slice(2);
                 } else if (arg.charAt(0) !== '-') {
@@ -532,9 +580,42 @@ function controlBoxFactory() {
                 }
             });
 
-            var before = hv.getCommit('HEAD').id;
+            // git reset <path>: a file name that is no ref
+            if (!paths.length && ref !== 'HEAD' && !hv.getCommit(ref) && (ref in hv.index || ref in hv.headTree())) {
+                paths = [ref];
+                ref = 'HEAD';
+            }
+
+            if (paths.length) {
+                var source = hv.getCommit(ref);
+                if (!source) {
+                    throw new Error(tr('noRef', ref));
+                }
+                paths.forEach(function (p) {
+                    if (!source.tree[p] && !hv.index[p]) {
+                        throw new Error(tr('noMatch', p));
+                    }
+                });
+                return paths.forEach(function (p) { setPath(hv.index, p, source.tree[p]); });
+            }
+
+            var before = hv.getCommit('HEAD').id,
+                untracked = hv.untracked();
             hv.reset(ref);
             var moved = hv.getCommit('HEAD').id !== before;
+
+            if (hv.hasFiles() && mode !== 'soft') {
+                var target = hv.headTree();
+                hv.index = clone(target);
+                if (mode === 'hard') {
+                    hv.work = clone(target);
+                    untracked.forEach(function (p) {
+                        if (!target[p]) {
+                            hv.work[p] = untracked.files[p];
+                        }
+                    });
+                }
+            }
 
             if (mode === 'hard') {
                 hv.setStatus('clean');
@@ -611,11 +692,82 @@ function controlBoxFactory() {
             if (!args.some(function (a) { return a.charAt(0) !== '-'; })) {
                 throw new Error(tr('needPath'));
             }
+            if (hv.hasFiles()) {
+                return this._restoreFiles(args, staged);
+            }
             if (staged && hv.status === 'staged') {
                 hv.setStatus('unstaged');
             } else if (!staged && hv.status === 'unstaged') {
                 hv.setStatus('clean');
             }
+        },
+
+        // restore [--staged] [--worktree] [--source=<ref>] <path>...
+        _restoreFiles: function (args, staged) {
+            var hv = this.historyView,
+                worktree = !staged || args.indexOf('--worktree') > -1 || args.indexOf('-W') > -1,
+                source = null,
+                paths = [];
+
+            for (var i = 0; i < args.length; i++) {
+                if (args[i].indexOf('--source=') === 0) {
+                    source = args[i].slice(9);
+                } else if (args[i] === '--source' || args[i] === '-s') {
+                    source = args[++i];
+                } else if (args[i].charAt(0) !== '-') {
+                    paths.push(args[i]);
+                }
+            }
+
+            var src = null;
+            if (source) {
+                if (!hv.getCommit(source)) {
+                    throw new Error(tr('noRef', source));
+                }
+                src = hv.getCommit(source).tree;
+            }
+            var head = hv.headTree(),
+                known = allPaths(head, hv.index, hv.work, src);
+            if (paths.indexOf('.') > -1) {
+                paths = known;
+            }
+            paths.forEach(function (p) {
+                if (known.indexOf(p) === -1) {
+                    throw new Error(tr('noMatch', p));
+                }
+            });
+            paths.forEach(function (p) {
+                if (staged) {
+                    setPath(hv.index, p, (src || head)[p]);
+                }
+                if (worktree) {
+                    setPath(hv.work, p, (src || (staged ? head : hv.index))[p]);
+                }
+            });
+        },
+
+        // checkout [<ref>] -- <path>...: files, not branches
+        _checkoutPaths: function (ref, paths) {
+            var hv = this.historyView,
+                src = ref ? hv.getCommit(ref) : null;
+            if (ref && !src) {
+                throw new Error(tr('noRef', ref));
+            }
+            var from = src ? src.tree : hv.index;
+            if (paths.indexOf('.') > -1) {
+                paths = Object.keys(from).sort();
+            }
+            paths.forEach(function (p) {
+                if (!from[p]) {
+                    throw new Error(tr('noMatch', p));
+                }
+            });
+            paths.forEach(function (p) {
+                if (src) {
+                    setPath(hv.index, p, from[p]);
+                }
+                setPath(hv.work, p, from[p]);
+            });
         },
 
         status: function (args) {
@@ -757,8 +909,26 @@ function controlBoxFactory() {
             }
         },
 
+        // clean -n / -f (also combined like -fd, -nx); without files: the 0.2.0 message
         clean: function (args) {
-            this.info(tr('clean'));
+            var hv = this.historyView, control = this;
+            if (!hv.hasFiles()) {
+                return this.info(tr('clean'));
+            }
+            var letters = args.filter(function (a) { return /^-[a-z]+$/.test(a); }).join(''),
+                dry = letters.indexOf('n') > -1 || args.indexOf('--dry-run') > -1,
+                force = letters.indexOf('f') > -1 || args.indexOf('--force') > -1;
+            if (!dry && !force) {
+                throw new Error(tr('requireForce'));
+            }
+            hv.untracked().forEach(function (p) {
+                if (dry) {
+                    control.info(tr('wouldRemove', p));
+                } else {
+                    delete hv.work[p];
+                    control.info(tr('removing', p));
+                }
+            });
         },
 
         'cherry-pick': function (args) {
@@ -2019,6 +2189,38 @@ function historyViewFactory(d3) {
                 }
                 return p;
             });
+        },
+
+        // paths in the working tree that the index does not know; .files keeps their content
+        untracked: function () {
+            var index = this.index, work = this.work,
+                list = Object.keys(work).filter(function (p) { return !index[p]; }).sort();
+            list.files = {};
+            list.forEach(function (p) { list.files[p] = work[p]; });
+            return list;
+        },
+
+        // switching to another commit: files that differ there must have no local changes,
+        // all other local changes come along (check = only test, change nothing)
+        switchTrees: function (target, check) {
+            var head = this.headTree(), index = this.index, work = this.work;
+            if (!this.hasFiles() && !Object.keys(target || {}).length) {
+                return;
+            }
+            var changes = allPaths(head, target, index, work).filter(function (p) {
+                return !sameLines(target[p], head[p]);
+            });
+            changes.forEach(function (p) {
+                if (!sameLines(index[p], head[p]) || !sameLines(work[p], index[p])) {
+                    throw new Error(tr('localChanges', p));
+                }
+            });
+            if (!check) {
+                changes.forEach(function (p) {
+                    setPath(index, p, target[p]);
+                    setPath(work, p, target[p]);
+                });
+            }
         },
 
         // commit -a: tracked files take their working tree content

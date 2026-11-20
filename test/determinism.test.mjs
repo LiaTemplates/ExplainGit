@@ -17,6 +17,7 @@ export const SCRIPTS = [
   { name: 'worktree', cmds: ['git worktree add -b dev ../wt', 'git -C ../wt commit', 'cd ../wt', 'git commit', 'cd .', 'git worktree add --detach ../wt2 dev^', 'git worktree remove ../wt2'] },
   { name: 'detached commits', cmds: ['git commit', 'git switch --detach HEAD', 'git commit', 'git commit --amend -m x', 'git switch -c saved'] },
   { name: 'files', cmds: ['echo "a b" > f', 'git add f', 'git commit -m one', 'echo c >> f', 'git commit -am two', 'git mv f g', 'git commit -m three'] },
+  { name: 'reset and restore', cmds: ['echo v1 > f', 'git add f', 'git commit', 'echo v2 > f', 'git commit -am v2', 'git reset HEAD~', 'git restore f', 'git switch -c dev', 'echo u > u', 'git clean -f', 'git reset --hard'] },
 ]
 
 for (const { name, cmds, opts } of SCRIPTS)

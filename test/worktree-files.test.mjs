@@ -52,3 +52,55 @@ test('cat of a missing file is an error', () => unchanged([], 'cat nope'))
 test('add of a missing path is an error', () => unchanged(['echo a > f'], 'git add nope'))
 test('git rm of an untracked file is an error', () => unchanged(['echo a > f'], 'git rm f'))
 test('echo > without a file name is an error', () => unchanged([], 'echo a >'))
+
+// --- Task 3: reset, restore, checkout -- path, switching with changes, clean
+const V = ['echo v1 > f', 'git add f', 'git commit -m v1', 'echo v2 > f', 'git add f', 'git commit -m v2', 'echo v3 > f', 'git add f', 'git commit -m v3']
+const files = r => viewInfo(r.box.hv).files
+
+test('reset --soft keeps index and working tree', () => {
+  const f = files(run(V.concat('git reset --soft HEAD~')))
+  assert.deepEqual([f.head.f, f.index.f, f.work.f], [['v2'], ['v3'], ['v3']])
+})
+test('reset --mixed sets the index', () => {
+  const f = files(run(V.concat('git reset HEAD~')))
+  assert.deepEqual([f.head.f, f.index.f, f.work.f], [['v2'], ['v2'], ['v3']])
+})
+test('reset --hard sets index and working tree, keeps untracked files', () => {
+  const f = files(run(V.concat('echo u > u', 'git reset --hard HEAD~')))
+  assert.deepEqual([f.head.f, f.index.f, f.work.f, f.work.u], [['v2'], ['v2'], ['v2'], ['u']])
+})
+test('reset -- path only touches the index', () => {
+  const r = run(V.concat('echo v4 > f', 'git add f', 'git reset -- f'))
+  assert.deepEqual([files(r).index.f, files(r).work.f], [['v3'], ['v4']]); assert.equal(r.box.hv.getCommit('HEAD').message, 'v3')
+})
+test('reset <ref> -- path takes the file from that commit', () => assert.deepEqual(files(run(V.concat('git reset HEAD~2 -- f'))).index.f, ['v1']))
+test('restore takes the file from the index', () => assert.deepEqual(files(run(V.concat('echo x > f', 'git restore f'))).work.f, ['v3']))
+test('restore --staged takes the index entry from HEAD', () => {
+  const f = files(run(V.concat('echo x > f', 'git add f', 'git restore --staged f')))
+  assert.deepEqual([f.index.f, f.work.f], [['v3'], ['x']])
+})
+test('restore --source', () => assert.deepEqual(files(run(V.concat('git restore --source=HEAD~2 f'))).work.f, ['v1']))
+test('checkout -- path and checkout <ref> -- path', () => {
+  assert.deepEqual(files(run(V.concat('echo x > f', 'git checkout -- f'))).work.f, ['v3'])
+  const f = files(run(V.concat('git checkout HEAD~1 -- f')))
+  assert.deepEqual([f.index.f, f.work.f], [['v2'], ['v2']])
+})
+test('switching updates index and working tree', () => {
+  const f = files(run(['echo a > f', 'git add f', 'git commit', 'git switch -c dev', 'echo b > f', 'git commit -am b', 'git switch master']))
+  assert.deepEqual([f.head.f, f.index.f, f.work.f], [['a'], ['a'], ['a']])
+})
+test('local changes come along when the file is the same on both branches', () => {
+  const f = files(run(['echo a > f', 'echo g > g', 'git add .', 'git commit', 'git branch dev', 'echo changed > g', 'git switch dev']))
+  assert.deepEqual(f.work.g, ['changed'])
+})
+test('local changes that would be overwritten stop the switch', () =>
+  unchanged(['echo a > f', 'git add f', 'git commit', 'git switch -c dev', 'echo b > f', 'git commit -am b', 'git switch master', 'echo local > f'], 'git switch dev'))
+test('switch -c with start point and local changes is refused before creating the branch', () =>
+  unchanged(['echo a > f', 'git add f', 'git commit', 'echo b > f', 'git commit -am b', 'echo local > f'], 'git switch -c old HEAD~'))
+test('clean -n lists, clean -f removes untracked files only', () => {
+  const r = run(['echo a > f', 'git add f', 'git commit', 'echo u > u', 'git clean -n'])
+  assert.equal(r.log.at(-1).text, 'Would remove u')
+  assert.deepEqual(files(run(['echo a > f', 'git add f', 'git commit', 'echo u > u', 'git clean -f'])).work, { f: ['a'] })
+})
+test('clean without -n or -f is refused', () => unchanged(['echo a > f', 'git add f', 'git commit', 'echo u > u'], 'git clean'))
+test('legacy reset still works without files', () => assert.equal(viewInfo(run(['git commit', 'git reset --soft HEAD^']).box.hv).status, 'staged'))

@@ -120,6 +120,10 @@ const TEXT = {
     noFile: p => `${p}: No such file or directory`,
     noMatch: p => `pathspec '${p}' did not match any files`,
     status_conflict: 'Working tree: conflicts to resolve',
+    localChanges: f => `Your local changes to ${f} would be overwritten. Commit, stash or restore them first.`,
+    wouldRemove: f => `Would remove ${f}`,
+    removing: f => `Removing ${f}`,
+    requireForce: 'clean.requireForce is set: use -n to see or -f to delete.',
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -236,6 +240,10 @@ const TEXT = {
     noFile: p => `${p}: Datei oder Verzeichnis nicht gefunden`,
     noMatch: p => `Pfad '${p}' stimmt mit keiner Datei überein`,
     status_conflict: 'Arbeitsverzeichnis: Konflikte lösen',
+    localChanges: f => `Deine lokalen Änderungen an ${f} würden überschrieben. Erst committen, stashen oder zurücknehmen.`,
+    wouldRemove: f => `Würde ${f} löschen`,
+    removing: f => `Lösche ${f}`,
+    requireForce: 'clean.requireForce ist gesetzt: mit -n ansehen oder mit -f löschen.',
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -352,6 +360,10 @@ const TEXT = {
     noFile: p => `${p}: немає такого файлу або каталогу`,
     noMatch: p => `шлях '${p}' не відповідає жодному файлу`,
     status_conflict: 'Робочий каталог: потрібно розв’язати конфлікти',
+    localChanges: f => `Ваші локальні зміни у ${f} буде перезаписано. Спершу закомітьте, сховайте (stash) або скасуйте їх.`,
+    wouldRemove: f => `Буде видалено ${f}`,
+    removing: f => `Видалення ${f}`,
+    requireForce: 'Встановлено clean.requireForce: використайте -n, щоб переглянути, або -f, щоб видалити.',
     upToDate: 'Уже актуально.'
   }
 }

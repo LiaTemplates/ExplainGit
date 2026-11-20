@@ -5,6 +5,16 @@ import { tr, fill } from './i18n.js'
 // id of the pseudo commit before the first one; contains a space, so no command can name it
 export const ROOT = 'initial commit'
 
+// worktree paths: ../wt/ is ../wt, ./wt is wt
+var normPath = function (path) {
+    return String(path || '').replace(/\/+$/, '').replace(/^\.\/(?=.)/, '') || '.';
+};
+
+// width of a branch or tag label, as renderTags draws it
+var labelWidth = function (name) {
+    return (name.length * 6) + 10;
+};
+
 // d3 v5 API subset used below; event is a live binding
 const d3 = {
   select: d3selection.select,
@@ -30,6 +40,23 @@ function controlBoxFactory() {
     }
 
     var NOT_COMMANDS = ['init', 'render', 'destroy', 'command', 'info', 'error'];
+
+    // the message after -m: "in quotes", or every word up to the next known flag
+    // (0.1.0 courses write git commit -m Hello World)
+    var takeMessage = function (args, flags) {
+        var words = [];
+        if (args.length && /^["']/.test(args[0])) {
+            var quote = args[0].charAt(0);
+            do {
+                words.push(args.shift());
+            } while (args.length && !(words[words.length - 1].length > 1 && words[words.length - 1].slice(-1) === quote));
+            return words.join(' ').slice(1, -1);
+        }
+        while (args.length && flags.indexOf(args[0]) === -1) {
+            words.push(args.shift());
+        }
+        return words.join(' ');
+    };
 
     ControlBox.prototype = {
         init: function(cmds) {
@@ -180,6 +207,9 @@ function controlBoxFactory() {
 
             // git -C <path> <command>: run in another worktree, then come back
             if (split[1] === '-C') {
+                if (!split[2]) {
+                    throw new Error(tr('needPath'));
+                }
                 var back = hv.worktrees[hv.active].path;
                 hv.activate(split[2]);
                 try {
@@ -213,13 +243,13 @@ function controlBoxFactory() {
         },
 
         commit: function (args) {
-            var amend = false, message;
+            var amend = false, message,
+                flags = ['--amend', '-a', '--all', '--allow-empty', '--no-edit'];
 
             while (args.length > 0) {
                 var arg = args.shift();
                 if (arg === '-m' || arg === '-am' || arg === '--message') {
-                    message = args.join(' ').replace(/^(["'])(.*)\1$/, '$2');
-                    args.length = 0;
+                    message = takeMessage(args, flags);
                 } else if (arg === '--amend') {
                     amend = true;
                 } else if (arg !== '-a' && arg !== '--all' && arg !== '--allow-empty' && arg !== '--no-edit') {
@@ -280,7 +310,10 @@ function controlBoxFactory() {
             case '-u':
             case '--set-upstream-to':
                 var target = rest[1] || hv.currentBranch;
-                if (!rest[0] || !hv.getCommit(rest[0]) || !hv.isRemoteRef(rest[0])) {
+                if (!rest[0]) {
+                    throw new Error(tr('needRef'));
+                }
+                if (!hv.getCommit(rest[0]) || !hv.isRemoteRef(rest[0])) {
                     throw new Error(tr('noRef', rest[0]));
                 }
                 hv.upstream[target] = rest[0];
@@ -418,6 +451,7 @@ function controlBoxFactory() {
 
             if (mode === 'hard') {
                 hv.setStatus('clean');
+                hv.squashPending = null;
             } else if (mode === 'soft') {
                 moved && hv.setStatus('staged');
             } else if (moved || hv.status !== 'clean') {
@@ -478,7 +512,7 @@ function controlBoxFactory() {
                 return hv.worktrees.forEach(function (w, i) {
                     var head = hv.worktreeHead(i),
                         branch = i === hv.active ? hv.currentBranch : w.branch;
-                    control.info(w.path + '  ' + head + (branch ? ' [' + branch + ']' : ' (detached HEAD)'));
+                    control.info(branch ? tr('worktreeLine', w.path, head, branch) : tr('worktreeLineDetached', w.path, head));
                 });
             }
             if (sub === 'remove') {
@@ -515,7 +549,7 @@ function controlBoxFactory() {
                 }
             } else {
                 // like git: without a branch, use (or create) one named after the folder
-                branch = target || path.split('/').pop();
+                branch = target || normPath(path).split('/').pop();
                 if (!hv.isLocalBranch(branch)) {
                     hv.branch(branch);
                 }
@@ -540,12 +574,13 @@ function controlBoxFactory() {
                 if (hv.status === 'clean') {
                     return this.info(tr('noLocalChanges'));
                 }
-                hv.stashPush();
+                var m = args.indexOf('-m') > -1 ? args.indexOf('-m') : args.indexOf('--message');
+                hv.stashPush(m > -1 ? takeMessage(args.slice(m + 1), []) : null);
                 return this.info(tr('stashSaved', 0));
             }
             if (action === 'list') {
                 for (var i = 0; i < hv.stashes.length; i++) {
-                    this.info('stash@{' + i + '}: ' + hv.getCommit(hv.stashes[i]).message);
+                    this.info(tr('stashLine', i, hv.getCommit(hv.stashes[i]).message));
                 }
                 return;
             }
@@ -655,6 +690,13 @@ function controlBoxFactory() {
             ref = positional[0];
             if (!ref) {
                 throw new Error(tr('needRef'));
+            }
+            var hv = this.historyView;
+            if (!hv.getCommit(ref)) {
+                throw new Error(tr('noRef', ref));
+            }
+            if (opt.onto && !hv.getCommit(opt.onto)) {
+                throw new Error(tr('noRef', opt.onto));
             }
             // git rebase <upstream> <branch>: switch to <branch> first
             if (positional[1]) {
@@ -815,6 +857,9 @@ function controlBoxFactory() {
             }
 
             if (opt.remove) {
+                if (!positional[1]) {
+                    throw new Error(tr('needBranchName'));
+                }
                 if (!remote.isLocalBranch(positional[1])) {
                     throw new Error(tr('noRef', positional[1]));
                 }
@@ -974,7 +1019,7 @@ function historyViewFactory(d3) {
             parentCX = parent.cx > parent2.cx ? parent.cx : parent2.cx;
         }
 
-        return parentCX + (view.commitRadius * 4.5);
+        return parentCX + (view.spacing || view.commitRadius * 4.5);
     };
 
     cy = function (commit, view) {
@@ -1168,11 +1213,6 @@ function historyViewFactory(d3) {
             cy: this.baseLine
         };
     }
-
-    HistoryView.generateId = function () {
-        return Math.floor((1 + Math.random()) * 0x10000000).toString(16).substring(1);
-    };
-
 
     HistoryView.prototype = {
         // FNV-1a hash of seed and counter, 7 hex digits like a short git hash:
@@ -1375,7 +1415,21 @@ function historyViewFactory(d3) {
             }
         },
 
+        _neededSpacing: function () {
+            var widest = 0, i;
+            for (i = 0; i < this.commitData.length; i++) {
+                this.commitData[i].tags.forEach(function (t) { widest = Math.max(widest, labelWidth(t)); });
+            }
+            for (i = 0; i < this.worktrees.length; i++) {
+                if (i !== this.active) {
+                    widest = Math.max(widest, labelWidth('HEAD ' + this.worktrees[i].path));
+                }
+            }
+            return Math.max(this.commitRadius * 4.5, widest + 10);
+        },
+
         renderCommits: function () {
+            this.spacing = this._neededSpacing();
             if (typeof this.height === 'string' && this.height.indexOf('%') >= 0) {
                 var perc = this.height.substring(0, this.height.length - 1) / 100.0;
                 var baseLineCalcHeight = Math.round(this.svg.node().parentNode.offsetHeight * perc) - 65;
@@ -1636,6 +1690,16 @@ function historyViewFactory(d3) {
         },
 
         renderTags: function () {
+            // a longer label than the commits have room for: lay the commits out again
+            if (this._neededSpacing() > (this.spacing || 0) && !this._spacingPass) {
+                this._spacingPass = true;
+                try {
+                    this.renderCommits();
+                } finally {
+                    this._spacingPass = false;
+                }
+                return;
+            }
             var view = this,
                 tagData = this._parseTagData(),
                 existingTags, newTags;
@@ -1796,6 +1860,7 @@ function historyViewFactory(d3) {
         },
 
         findWorktree: function (path) {
+            path = normPath(path);
             for (var i = 0; i < this.worktrees.length; i++) {
                 if (this.worktrees[i].path === path) {
                     return i;
@@ -1846,16 +1911,18 @@ function historyViewFactory(d3) {
             current.head = this.getCommit('HEAD').id;
             current.status = this.status;
             current.previous = this.previousBranch;
+            current.squash = this.squashPending;
 
             this.active = index;
             this.currentBranch = next.branch;
             this.previousBranch = next.previous || null;
+            this.squashPending = next.squash || null;
             this.checkout(next.branch || next.head);
             this.setStatus(next.status);
         },
 
         addWorktree: function (path, branch, head) {
-            this.worktrees.push({ path: path, branch: branch, head: head, status: 'clean' });
+            this.worktrees.push({ path: normPath(path), branch: branch, head: head, status: 'clean' });
             this._setCurrentBranch(this.currentBranch);
             this.renderTags();
         },
@@ -1880,11 +1947,13 @@ function historyViewFactory(d3) {
         },
 
         // a stash is a commit on top of HEAD that no branch points to, named stash@{n}
-        stashPush: function () {
-            var commit = {
+        stashPush: function (text) {
+            var where = this.currentBranch || this.getCommit('HEAD').id,
+                commit = {
                 id: this.nextId(),
                 parent: this.getCommit('HEAD').id,
-                message: 'WIP on ' + (this.currentBranch || this.getCommit('HEAD').id),
+                // stored as plain text: the marks are only for display
+                message: (text ? tr('stashOn', where, text) : tr('stashWip', where)).replace(/[\u2068\u2069]/g, ''),
                 tags: [],
                 stash: true
             };
@@ -1892,6 +1961,7 @@ function historyViewFactory(d3) {
             this.stashes.unshift(commit.id);
             this._numberStashes();
             this.setStatus('clean');
+            this.squashPending = null;
             this.renderCommits();
         },
 
@@ -2118,7 +2188,7 @@ function historyViewFactory(d3) {
                 previousHead.classed('checked-out', false);
             }
 
-            this._setCurrentBranch(this.isLocalBranch(ref) ? ref : null);
+            this._setCurrentBranch(this.isLocalBranch(ref) ? ref : ref === 'HEAD' ? this.currentBranch : null);
             this.moveTag('HEAD', commit.id);
             this.renderTags();
 

@@ -1,5 +1,6 @@
 // Runs ExplainGit in jsdom: run(cmds) gives the sandbox, the console log and the state
 import { JSDOM } from 'jsdom'
+import assert from 'node:assert/strict'
 
 const dom = new JSDOM('<!doctype html><html lang="en"><body></body></html>', { pretendToBeVisual: true })
 for (const k of ['window', 'document', 'Node', 'Element', 'SVGElement', 'requestAnimationFrame', 'cancelAnimationFrame', 'getComputedStyle'])
@@ -25,3 +26,16 @@ export function run(cmds, opts = {}) {
 export const same = (a, b, opts) => repo.compare(run(a, opts).state, run(b, opts).state).length === 0
 
 export const graph = box => box.hv.commitData.map(c => [c.id, c.parent, c.parent2 || null, [...c.tags].sort()])
+
+const strip = v => JSON.parse(JSON.stringify({ ...v, byId: undefined }))
+
+// a rejected command shows an error and changes nothing
+export function unchanged(cmds, bad, opts) {
+  const before = run(cmds, opts)
+  const after = run(cmds.concat(bad), opts)
+  assert.equal(after.log.at(-1).kind, 'error', bad)
+  assert.doesNotMatch(after.log.at(-1).text, /undefined/, bad)
+  assert.deepEqual(graph(after.box), graph(before.box), bad)
+  assert.deepEqual(strip(viewInfo(after.box.hv)), strip(viewInfo(before.box.hv)), bad)
+  if (opts && opts.origin) assert.deepEqual(graph({ hv: after.box.ov }), graph({ hv: before.box.ov }), bad)
+}

@@ -101,6 +101,11 @@ const TEXT = {
     worktreeMissing: p => `Worktree ${p} is missing.`,
     worktreeWrong: p => `Worktree ${p} is not on the right branch or commit yet.`,
     worktreeExtra: p => `Worktree ${p} should not exist.`,
+    worktreeLine: (p, id, b) => `${p}  ${id} [${b}]`,
+    worktreeLineDetached: (p, id) => `${p}  ${id} (detached HEAD)`,
+    stashLine: (n, m) => `stash@{${n}}: ${m}`,
+    stashWip: b => `WIP on ${b}`,
+    stashOn: (b, m) => `On ${b}: ${m}`,
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -198,6 +203,11 @@ const TEXT = {
     worktreeMissing: p => `Worktree ${p} fehlt.`,
     worktreeWrong: p => `Worktree ${p} ist noch nicht auf dem richtigen Branch oder Commit.`,
     worktreeExtra: p => `Worktree ${p} sollte es nicht geben.`,
+    worktreeLine: (p, id, b) => `${p}  ${id} [${b}]`,
+    worktreeLineDetached: (p, id) => `${p}  ${id} (losgelöster HEAD)`,
+    stashLine: (n, m) => `stash@{${n}}: ${m}`,
+    stashWip: b => `WIP auf ${b}`,
+    stashOn: (b, m) => `Auf ${b}: ${m}`,
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -295,6 +305,11 @@ const TEXT = {
     worktreeMissing: p => `Робоче дерево ${p} відсутнє.`,
     worktreeWrong: p => `Робоче дерево ${p} ще не на правильній гілці чи коміті.`,
     worktreeExtra: p => `Робочого дерева ${p} не має бути.`,
+    worktreeLine: (p, id, b) => `${p}  ${id} [${b}]`,
+    worktreeLineDetached: (p, id) => `${p}  ${id} (від’єднаний HEAD)`,
+    stashLine: (n, m) => `stash@{${n}}: ${m}`,
+    stashWip: b => `WIP на ${b}`,
+    stashOn: (b, m) => `На ${b}: ${m}`,
     upToDate: 'Уже актуально.'
   }
 }

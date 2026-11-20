@@ -1,23 +1,11 @@
 // findings of the whole-branch review
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { run, same, graph, viewInfo, compare } from './harness.mjs'
+import { run, same, viewInfo, compare, unchanged } from './harness.mjs'
 import * as repo from '../src/repo.js'
 const needsStatus = cmds => repo.needsStatus(cmds)
 
 const O = { origin: true }
-const strip = v => JSON.parse(JSON.stringify({ ...v, byId: undefined }))
-
-// a rejected command must not change anything
-function unchanged(cmds, bad, opts) {
-  const before = run(cmds, opts)
-  const after = run(cmds.concat(bad), opts)
-  assert.equal(after.log.at(-1).kind, 'error', bad)
-  assert.deepEqual(graph(after.box), graph(before.box), bad)
-  assert.deepEqual(strip(viewInfo(after.box.hv)), strip(viewInfo(before.box.hv)), bad)
-  if (opts && opts.origin) assert.deepEqual(graph({ hv: after.box.ov }), graph({ hv: before.box.ov }), bad)
-}
-
 test('pull when the local branch is ahead makes no merge commit', () => {
   const { box, log } = run(['git commit', 'git push', 'git commit', 'git pull'], O)
   assert.equal(box.hv.getCommit('HEAD').parent2, undefined)

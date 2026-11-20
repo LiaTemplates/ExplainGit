@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { run, viewInfo } from './harness.mjs'
+import { run, viewInfo, unchanged } from './harness.mjs'
 
 test('cherry-pick copies onto HEAD', () => {
   const { box } = run(['git switch -c dev', 'git commit -m fix', 'git switch master', 'git cherry-pick dev'])
@@ -18,6 +18,6 @@ test('the log names both commits', () => {
   const { log, box } = run(['git switch -c dev', 'git commit -m fix', 'git switch master', 'git cherry-pick dev'])
   assert.equal(log.at(-1).text, `Copied ${viewInfo(box.hv).refs.dev} as ${box.hv.getCommit('HEAD').id}.`)
 })
-test('rejects unknown ref', () => assert.equal(run(['git cherry-pick nope']).log.at(-1).kind, 'error'))
-test('rejects a commit already in HEAD', () => assert.equal(run(['git commit', 'git cherry-pick HEAD']).log.at(-1).kind, 'error'))
-test('rejects cherry-pick without ref', () => assert.equal(run(['git cherry-pick']).log.at(-1).kind, 'error'))
+test('rejects unknown ref', () => unchanged([], 'git cherry-pick nope'))
+test('rejects a commit already in HEAD', () => unchanged(['git commit'], 'git cherry-pick HEAD'))
+test('rejects cherry-pick without ref', () => unchanged([], 'git cherry-pick'))

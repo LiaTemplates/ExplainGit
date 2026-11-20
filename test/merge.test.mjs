@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { run, same } from './harness.mjs'
+import { run, same, unchanged } from './harness.mjs'
 
 const BRANCH = ['git switch -c dev', 'git commit', 'git commit', 'git switch master']
 
@@ -22,4 +22,4 @@ test('ff-only refuses a real merge', () => {
 test('ff-only fast-forwards', () => assert.ok(same(
   ['git switch -c dev', 'git commit', 'git switch master', 'git merge --ff-only dev'],
   ['git switch -c dev', 'git commit', 'git switch master', 'git merge dev'])))
-test('rejects squash of an unknown branch', () => assert.equal(run(['git merge --squash nope']).log.at(-1).kind, 'error'))
+test('rejects squash of an unknown branch', () => unchanged([], 'git merge --squash nope'))

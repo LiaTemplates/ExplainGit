@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { run, same, viewInfo } from './harness.mjs'
+import { run, same, viewInfo, unchanged } from './harness.mjs'
 
 const wt = r => viewInfo(r.box.hv).worktrees
 
@@ -15,9 +15,9 @@ test('commit in the other worktree moves only its branch', () => {
 })
 test('-C returns to the worktree you were in', () => assert.equal(run(['git worktree add -b dev ../wt', 'git -C ../wt commit']).box.hv.currentBranch, 'master'))
 test('a branch can be checked out in one worktree only', () => {
-  assert.equal(run(['git worktree add -b dev ../wt', 'git switch dev']).log.at(-1).kind, 'error')
-  assert.equal(run(['git worktree add ../wt master']).log.at(-1).kind, 'error')
-  assert.equal(run(['git worktree add -b dev ../wt', 'git branch -D dev']).log.at(-1).kind, 'error')
+  unchanged(['git worktree add -b dev ../wt'], 'git switch dev')
+  unchanged([], 'git worktree add ../wt master')
+  unchanged(['git worktree add -b dev ../wt'], 'git branch -D dev')
 })
 test('cd switches HEAD and back', () => {
   assert.equal(run(['git worktree add -b dev ../wt', 'cd ../wt']).box.hv.currentBranch, 'dev')
@@ -33,7 +33,7 @@ test('list shows every worktree', () => {
 })
 test('remove frees the branch', () => assert.equal(run(['git worktree add -b dev ../wt', 'git worktree remove ../wt', 'git switch dev']).box.hv.currentBranch, 'dev'))
 test('remove refuses changes, --force removes', () => {
-  assert.equal(run(['git worktree add -b dev ../wt', 'cd ../wt', 'edit', 'cd .', 'git worktree remove ../wt']).log.at(-1).kind, 'error')
+  unchanged(['git worktree add -b dev ../wt', 'cd ../wt', 'edit', 'cd .'], 'git worktree remove ../wt')
   assert.equal(wt(run(['git worktree add -b dev ../wt', 'cd ../wt', 'edit', 'cd .', 'git worktree remove --force ../wt'])).length, 1)
 })
 test('the other HEAD is drawn and keeps its commits visible', () => {
@@ -50,5 +50,5 @@ test('quiz sees worktrees', () => {
   assert.ok(!same(['git worktree add -b dev ../wt'], ['git branch dev']))
   assert.ok(same(['git worktree add -b dev ../wt'], ['git branch dev', 'git worktree add ../wt dev']))
 })
-test('rejects worktree add without path', () => assert.equal(run(['git worktree add']).log.at(-1).kind, 'error'))
-test('rejects cd to an unknown path', () => assert.equal(run(['cd ../nope']).log.at(-1).kind, 'error'))
+test('rejects worktree add without path', () => unchanged([], 'git worktree add'))
+test('rejects cd to an unknown path', () => unchanged([], 'cd ../nope'))

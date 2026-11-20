@@ -165,12 +165,13 @@ export function needsStatus(cmds) {
 
 export function compare(actual, expected, { status = true } = {}) {
   const problems = []
-  // start points for the whole graph: the refs of the solution, then HEAD
+  // start points for the whole graph: the refs of the solution, then the HEAD of every worktree
   const starts = views =>
     views.flatMap(([scope, v], i) => {
       const names = Object.keys(expected[i][1].refs).sort()
       const list = names.map(name => [scope + name, v.refs[name], v.byId])
-      if (scope === '') list.push(['HEAD', v.head, v.byId], ['HEAD->' + (v.branch || ''), null, v.byId])
+      if (scope === '')
+        for (const [path, branch, head] of v.worktrees) list.push(['HEAD ' + path, head, v.byId], ['HEAD ' + path + '->' + (branch || ''), null, v.byId])
       return list
     })
 
@@ -196,29 +197,20 @@ export function compare(actual, expected, { status = true } = {}) {
 
   if (status && actual[0][1].status !== expected[0][1].status) return [tr('wrongStatus')]
 
-  // other worktrees ('.' is covered by the HEAD check below)
+  // every worktree by path: its branch and where its HEAD is ('.' is the main one)
   const a = actual[0][1], e = expected[0][1]
-  const others = v => new Map(v.worktrees.filter(w => w[0] !== '.').map(w => [w[0], w]))
-  const wa = others(a), we = others(e)
+  const byPath = v => new Map(v.worktrees.map(w => [w[0], w]))
+  const wa = byPath(a), we = byPath(e)
   for (const [path, w] of we) {
     const got = wa.get(path)
     if (!got) problems.push(tr('worktreeMissing', path))
     else if (got[1] !== w[1] || encode([['wt', got[2], a.byId]]) !== encode([['wt', w[2], e.byId]]))
-      problems.push(tr('worktreeWrong', path))
+      problems.push(path === '.' ? tr('head') : tr('worktreeWrong', path))
   }
   for (const path of wa.keys()) if (!we.has(path)) problems.push(tr('worktreeExtra', path))
   if (problems.length) return problems
 
-  if (encode(starts(actual)) !== encode(starts(expected))) {
-    const a = actual[0][1]
-    const e = expected[0][1]
-    if (
-      a.branch !== e.branch ||
-      encode([['HEAD', a.head, a.byId]]) !== encode([['HEAD', e.head, e.byId]])
-    )
-      problems.push(tr('head'))
-    else problems.push(tr('shape'))
-  }
+  if (encode(starts(actual)) !== encode(starts(expected))) problems.push(tr('shape'))
   return problems
 }
 

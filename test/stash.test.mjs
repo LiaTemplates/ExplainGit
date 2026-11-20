@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { run, viewInfo } from './harness.mjs'
+import { run, viewInfo, unchanged } from './harness.mjs'
 
 test('stash saves changes and cleans', () => {
   const { box } = run(['edit', 'git stash'])
@@ -26,12 +26,12 @@ test('drop removes one entry', () => {
   assert.ok('stash@{0}' in r); assert.ok(!('stash@{1}' in r))
 })
 test('list names the entries', () => assert.equal(run(['edit', 'git stash', 'git stash list']).log.at(-1).text, 'stash@{0}: WIP on master'))
-test('a stash is not a branch', () => assert.equal(run(['edit', 'git stash', 'git switch stash@{0}']).log.at(-1).kind, 'error'))
+test('a stash is not a branch', () => unchanged(['edit', 'git stash'], 'git switch stash@{0}'))
 test('stash on a clean tree only informs', () => {
   const { log, box } = run(['git stash'])
   assert.equal(log.at(-1).kind, 'info'); assert.ok(!('stash@{0}' in viewInfo(box.hv).refs))
 })
-test('rejects pop without stash', () => assert.equal(run(['git stash pop']).log.at(-1).kind, 'error'))
+test('rejects pop without stash', () => unchanged([], 'git stash pop'))
 
 test('quiz feedback names a missing stash as stash', async () => {
   const { compare, snapshot } = await import('./harness.mjs')

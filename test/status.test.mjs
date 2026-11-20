@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { run, same, viewInfo } from './harness.mjs'
+import { run, same, viewInfo, unchanged } from './harness.mjs'
 
 const status = cmds => viewInfo(run(cmds).box.hv).status
 
@@ -19,4 +19,4 @@ test('status prints the state', () => assert.equal(run(['edit', 'git status']).l
 test('quiz: soft and hard reset differ', () => assert.ok(!same(['git commit', 'git reset --soft HEAD^'], ['git commit', 'git reset --hard HEAD^'])))
 test('old quizzes unaffected', () => assert.ok(same(['git commit'], ['git commit'])))
 test('status line shows the state', () => assert.match(run(['edit']).box.hv.svg.select('text.status-display').text(), /not staged/))
-test('rejects restore without path', () => assert.equal(run(['edit', 'git restore']).log.at(-1).kind, 'error'))
+test('rejects restore without path', () => unchanged(['edit'], 'git restore'))

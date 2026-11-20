@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { run, viewInfo } from './harness.mjs'
+import { run, viewInfo, unchanged } from './harness.mjs'
 
 test('slash names are local branches', () => {
   const { box } = run(['git switch -c feature/login', 'git commit'])
@@ -24,10 +24,10 @@ test('branch -m old new renames another branch', () => {
 test('branch -c copies', () => { const r = viewInfo(run(['git branch -c master copy']).box.hv).refs; assert.equal(r.copy, r.master) })
 test('branch -f moves another branch', () => { const r = viewInfo(run(['git branch dev', 'git commit', 'git branch -f dev HEAD']).box.hv).refs; assert.equal(r.dev, r.master) })
 test('branch -D deletes', () => assert.ok(!('dev' in viewInfo(run(['git branch dev', 'git branch -D dev']).box.hv).refs)))
-test('rejects -m onto existing name without -M', () => assert.equal(run(['git branch dev', 'git branch -m dev']).log.at(-1).kind, 'error'))
+test('rejects -m onto existing name without -M', () => unchanged(['git branch dev'], 'git branch -m dev'))
 test('-M overwrites', () => {
   const { box } = run(['git branch dev', 'git branch -M dev'])
   assert.equal(box.hv.currentBranch, 'dev'); assert.ok(!('master' in viewInfo(box.hv).refs))
 })
-test('rejects -f on the current branch', () => assert.equal(run(['git commit', 'git branch -f master HEAD^']).log.at(-1).kind, 'error'))
+test('rejects -f on the current branch', () => unchanged(['git commit'], 'git branch -f master HEAD^'))
 test('rename message names the old branch', () => assert.equal(run(['git branch -m main']).log.at(-1).text, 'Renamed master to main.'))

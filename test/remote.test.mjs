@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { run, viewInfo } from './harness.mjs'
+import { run, viewInfo, unchanged } from './harness.mjs'
 
 const O = { origin: true }
 const refs = (r, view = 'hv') => viewInfo(r.box[view]).refs
@@ -22,7 +22,7 @@ test('force-with-lease overwrites after amend', () => {
   const r = run(['git commit -m a', 'git push', 'git commit --amend -m b', 'git push --force-with-lease'], O)
   assert.notEqual(r.log.at(-1).kind, 'error'); assert.equal(refs(r, 'ov').master, refs(r).master)
 })
-test('plain push after amend is rejected', () => assert.equal(run(['git commit -m a', 'git push', 'git commit --amend -m b', 'git push'], O).log.at(-1).kind, 'error'))
+test('plain push after amend is rejected', () => unchanged(['git commit -m a', 'git push', 'git commit --amend -m b'], 'git push', O))
 test('push --delete removes the remote branch', () => {
   const r = run(['git switch -c dev', 'git push -u origin dev', 'git push origin --delete dev'], O)
   assert.ok(!('dev' in refs(r, 'ov'))); assert.ok(!('origin/dev' in refs(r)))
@@ -39,4 +39,4 @@ test('branch -u sets the upstream', () => {
 })
 test('pull --ff-only refuses divergence', () => assert.equal(
   run(['git commit -m a', 'git push', 'git reset --hard HEAD^', 'git commit -m b', 'git pull --ff-only'], O).log.at(-1).kind, 'error'))
-test('rejects branch -u with unknown upstream', () => assert.equal(run(['git branch -u origin/nope'], O).log.at(-1).kind, 'error'))
+test('rejects branch -u with unknown upstream', () => unchanged([], 'git branch -u origin/nope', O))

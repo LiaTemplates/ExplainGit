@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { run, same } from './harness.mjs'
+import { run, same, unchanged } from './harness.mjs'
 
 test('amend replaces HEAD', () => {
   const { box } = run(['git commit -m one', 'git commit --amend -m two'])
@@ -15,4 +15,4 @@ test('amend keeps the parents of a merge', () => {
 })
 test('-am and --allow-empty are commits', () => assert.ok(same(['git commit -am x', 'git commit --allow-empty'], ['git commit', 'git commit'])))
 test('-a -m "two words" keeps the message', () => assert.equal(run(['git commit -a -m "two words"']).box.hv.getCommit('HEAD').message, 'two words'))
-test('rejects amend on the first commit', () => assert.equal(run(['git commit --amend']).log.at(-1).kind, 'error'))
+test('rejects amend on the first commit', () => unchanged([], 'git commit --amend'))

@@ -84,6 +84,7 @@ export class Sandbox {
     this.cb.render(playground)
     this.hv.render(playground)
     this.hv.svg.attr('role', 'img').attr('aria-label', tr('graph'))
+    this.hv.initReflog()
     this.playground = playground
 
     // files panel below the graph area

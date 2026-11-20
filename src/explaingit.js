@@ -259,11 +259,15 @@ function controlBoxFactory() {
 
             this._scrollToBottom();
 
+            var before = this.historyView && this.historyView.refSnapshot();
             try {
                 this._run(split);
             } catch (ex) {
                 var msg = (ex && ex.message) ? ex.message: null;
                 this.error(msg);
+            }
+            if (before) {
+                this._recordReflog(before, split);
             }
             if (this.historyView && this.historyView.svg) {
                 this.historyView.showStatus();
@@ -1238,7 +1242,7 @@ function controlBoxFactory() {
                 } else if (a === '--not') {
                     not = !not;
                 } else if (a.charAt(0) === '-' && a.length > 1) {
-                    o[{ '--oneline': 'oneline', '--graph': 'graph', '--all': 'all', '--merges': 'merges', '--no-merges': 'noMerges',
+                    o[{ '-g': 'reflog', '--walk-reflogs': 'reflog', '--oneline': 'oneline', '--graph': 'graph', '--all': 'all', '--merges': 'merges', '--no-merges': 'noMerges',
                         '--first-parent': 'firstParent', '-p': 'patch', '--patch': 'patch', '--stat': 'stat', '--left-right': 'leftRight' }[a] || 'ignored'] = true;
                 } else {
                     var range = /^(.*?)(\.\.\.?)(.*)$/.exec(a);
@@ -1255,6 +1259,16 @@ function controlBoxFactory() {
                         (not ? excludes : includes).push(a);
                     }
                 }
+            }
+            if (o.reflog) {
+                var ref = includes[0] || 'HEAD';
+                return hv.reflogFor(ref).slice(0, o.max).forEach(function (e, i) {
+                    var c = hv.getCommit(e.id);
+                    control.diffLine('commit ' + e.id + (hv.decorations(e.id) ? ' (' + hv.decorations(e.id) + ')' : ''), 'commit');
+                    control.diffLine('Reflog: ' + ref + '@{' + i + '}', 'ctx');
+                    control.diffLine('Reflog message: ' + e.msg, 'ctx');
+                    control.diffLine('    ' + ((c && c.message) || ''), 'ctx');
+                });
             }
             if (o.all) {
                 includes = includes.concat(hv.allRefs());
@@ -1314,6 +1328,73 @@ function controlBoxFactory() {
                 }
             });
             hv.highlight(commits.map(function (c) { return c.id; }));
+        },
+
+        // after every command: one reflog entry for HEAD and for each branch that moved
+        _recordReflog: function (before, split) {
+            var hv = this.historyView,
+                after = hv.refSnapshot(),
+                msg = this._reflogMessage(split, before, after),
+                rebasing = hv.operation && hv.operation.type === 'rebase' ? hv.operation.orig.branch : null;
+            if (before.active === after.active && (before.head !== after.head || before.branch !== after.branch)) {
+                hv.addReflog('HEAD', after.head, msg);
+            }
+            Object.keys(after.branches).forEach(function (b) {
+                if (before.branches[b] === undefined) {
+                    var start = split[1] === 'branch' && split[2] === b && split[3] ? split[3] : 'HEAD';
+                    hv.addReflog(b, after.branches[b], 'branch: Created from ' + start);
+                } else if (before.branches[b] !== after.branches[b] && b !== rebasing) {
+                    // like git: a rebased branch moves once, when the rebase finishes
+                    hv.addReflog(b, after.branches[b], msg);
+                }
+            });
+            Object.keys(before.branches).forEach(function (b) {
+                if (after.branches[b] === undefined) {
+                    delete hv.reflog[b];
+                }
+            });
+        },
+
+        _reflogMessage: function (split, before, after) {
+            var hv = this.historyView,
+                head = hv.getCommit('HEAD'),
+                sub = split[0] === 'git' ? split[1] : split[0],
+                args = split.slice(2).filter(function (a) { return a.charAt(0) !== '-'; }),
+                merged = head.parent2 && head.id !== before.head ? "Merge made by the 'ort' strategy." : 'Fast-forward';
+            switch (sub) {
+            case 'commit':
+                return (split.indexOf('--amend') > -1 ? 'commit (amend): ' : head.parent2 ? 'commit (merge): ' : 'commit: ') + (head.message || '');
+            case 'switch':
+            case 'checkout':
+                return 'checkout: moving from ' + (before.branch || before.head) + ' to ' + (after.branch || after.head);
+            case 'reset':
+                return 'reset: moving to ' + (args[0] || 'HEAD');
+            case 'merge':
+                return 'merge ' + args[0] + ': ' + merged;
+            case 'pull':
+                return 'pull: ' + merged;
+            case 'rebase':
+                return hv.operation ? 'rebase (pick): ' + (head.message || '')
+                    : 'rebase (finish): returning to refs/heads/' + (after.branch || after.head);
+            case 'cherry-pick':
+            case 'revert':
+                return sub + ': ' + (head.message || '');
+            default:
+                return sub + (split.length > 2 ? ': ' + split.slice(2).join(' ') : '');
+            }
+        },
+
+        // reflog [show] [<ref>]
+        reflog: function (args) {
+            var hv = this.historyView, control = this,
+                rest = args[0] === 'show' ? args.slice(1) : args,
+                ref = rest.filter(function (a) { return a.charAt(0) !== '-'; })[0] || 'HEAD';
+            if (ref !== 'HEAD' && !hv.reflog[ref]) {
+                throw new Error(tr('noRef', ref));
+            }
+            hv.reflogFor(ref).forEach(function (e, i) {
+                control.plain(e.id + ' ' + ref + '@{' + i + '}: ' + e.msg);
+            });
         },
 
         // rev-parse <rev>... / --abbrev-ref HEAD
@@ -2023,6 +2104,7 @@ function historyViewFactory(d3) {
         this.work = {};
         this.stashes = [];      // commit ids, newest first
         this.config = {};       // git config of this repository
+        this.reflog = {};       // ref -> [{id, msg}], newest first; HEAD per worktree
         this.operation = null;  // merge/cherry-pick/revert/rebase that stopped at a conflict
         this.upstream = {};     // branch -> remote tracking branch, set by push -u / branch -u
         // worktrees: the active one lives in currentBranch, HEAD and status
@@ -2765,6 +2847,34 @@ function historyViewFactory(d3) {
             return null;
         },
 
+        // HEAD, the active branch and every local branch start with their first commit
+        initReflog: function () {
+            var view = this, head = this.getCommit('HEAD');
+            if (!head) {
+                return;
+            }
+            this.reflog.HEAD = [{ id: head.id, msg: 'commit (initial): ' + (head.message || '') }];
+            Object.keys(this.refSnapshot().branches).forEach(function (b) {
+                view.reflog[b] = [{ id: view.getCommit(b).id, msg: 'commit (initial): ' + (view.getCommit(b).message || '') }];
+            });
+        },
+
+        refSnapshot: function () {
+            var view = this, branches = {}, head = this.getCommit('HEAD');
+            this.commitData.forEach(function (c) {
+                c.tags.forEach(function (t) {
+                    if (view.isLocalBranch(t)) {
+                        branches[t] = c.id;
+                    }
+                });
+            });
+            return { active: this.active, branch: this.currentBranch, head: head && head.id, branches: branches };
+        },
+
+        addReflog: function (ref, id, msg) {
+            (this.reflog[ref] = this.reflog[ref] || []).unshift({ id: id, msg: msg });
+        },
+
         // reflog entries of a ref, newest first (HEAD@{0} is where it is now)
         reflogFor: function (ref) {
             return (this.reflog && this.reflog[ref]) || [];
@@ -3053,6 +3163,7 @@ function historyViewFactory(d3) {
             current.index = this.index;
             current.work = this.work;
             current.operation = this.operation;
+            current.reflogHead = this.reflog.HEAD;
             current.previous = this.previousBranch;
             current.squash = this.squashPending;
 
@@ -3063,6 +3174,7 @@ function historyViewFactory(d3) {
             this.index = next.index || {};
             this.work = next.work || {};
             this.operation = next.operation || null;
+            this.reflog.HEAD = next.reflogHead || [{ id: next.branch ? this.getCommit(next.branch).id : next.head, msg: 'worktree add' }];
             this.checkout(next.branch || next.head);
             this.setStatus(next.status);
         },

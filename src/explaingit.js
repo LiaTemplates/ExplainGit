@@ -1075,12 +1075,63 @@ function controlBoxFactory() {
             });
         },
 
+        // --continue / --skip / --abort of cherry-pick, revert and rebase
+        _sequenceFlag: function (type, args) {
+            var hv = this.historyView;
+            if (args.indexOf('--abort') > -1) {
+                hv.abortOperation(type);
+                return true;
+            }
+            if (args.indexOf('--continue') > -1) {
+                this._printSequence(type, hv.continueOperation(type));
+                return true;
+            }
+            if (args.indexOf('--skip') > -1) {
+                this._printSequence(type, hv.skipOperation(type));
+                return true;
+            }
+            if (hv.operation) {
+                throw new Error(tr('operationInProgress', hv.operation.type));
+            }
+            return false;
+        },
+
+        _printSequence: function (type, result) {
+            var control = this;
+            (result.done || []).forEach(function (d) {
+                if (type === 'cherry-pick') {
+                    control.info(tr('cherryPicked', d.from, d.to));
+                }
+            });
+            if (result.conflicts) {
+                result.conflicts.forEach(function (p) { control.info(tr('conflictIn', p)); });
+                this.info(tr('stoppedAt', result.at.id, result.at.message || ''));
+                this.info(tr('resolveHint', type));
+            }
+        },
+
         'cherry-pick': function (args) {
             var hv = this.historyView,
                 refs = args.filter(function (a) { return a.charAt(0) !== '-'; });
 
+            if (this._sequenceFlag('cherry-pick', args)) {
+                return;
+            }
             if (refs.length === 0) {
                 throw new Error(tr('needRef'));
+            }
+            if (hv.hasFiles()) {
+                var items = refs.map(function (ref) {
+                    var source = hv.getCommit(ref);
+                    if (!source || source.id === ROOT) {
+                        throw new Error(tr('noRef', ref));
+                    }
+                    if (hv.isAncestor(source, 'HEAD')) {
+                        throw new Error(tr('alreadyInHead', ref));
+                    }
+                    return { id: source.id, kind: 'pick' };
+                });
+                return this._printSequence('cherry-pick', hv.startSequence('cherry-pick', items));
             }
             for (var i = 0; i < refs.length; i++) {
                 var source = hv.cherryPick(refs[i]);
@@ -1089,7 +1140,22 @@ function controlBoxFactory() {
         },
 
         revert: function (args) {
-            this.historyView.revert(args.shift());
+            var hv = this.historyView,
+                ref = args.filter(function (a) { return a.charAt(0) !== '-'; })[0];
+            if (this._sequenceFlag('revert', args)) {
+                return;
+            }
+            if (hv.hasFiles()) {
+                var commit = hv.getCommit(ref);
+                if (!commit) {
+                    throw new Error(tr('noRef', ref));
+                }
+                if (!hv.isAncestor(commit, 'HEAD')) {
+                    throw new Error(tr('notAncestor', ref));
+                }
+                return this._printSequence('revert', hv.startSequence('revert', [{ id: commit.id, kind: 'revert' }]));
+            }
+            hv.revert(ref);
         },
 
         merge: function (args) {
@@ -1135,6 +1201,12 @@ function controlBoxFactory() {
                     throw new Error(tr('upToDate'));
                 }
                 // no commit yet: the next commit takes the changes, with one parent
+                if (hv.hasFiles()) {
+                    var base = hv.mergeBase('HEAD', target.id),
+                        merged = hv._threeWay(base ? base.tree : {}, target.tree, branch),
+                        control = this;
+                    merged.conflicts.forEach(function (p) { control.info(tr('conflictIn', p)); });
+                }
                 hv.squashPending = target.id;
                 hv.setStatus('staged');
                 this.info(tr('squashed', branch));
@@ -1160,6 +1232,10 @@ function controlBoxFactory() {
 
         rebase: function (args) {
             var opt = {}, positional = [], ref, result;
+
+            if (this._sequenceFlag('rebase', args)) {
+                return;
+            }
 
             while (args.length > 0) {
                 var arg = args.shift();
@@ -1192,7 +1268,9 @@ function controlBoxFactory() {
             }
 
             result = this.historyView.rebase(ref, opt);
-            if (result === 'Fast-Forward') {
+            if (result && result.done) {
+                this._printSequence('rebase', result);
+            } else if (result === 'Fast-Forward') {
                 this.info(tr('fastForwardTo', opt.onto || ref));
             } else if (result === 'Up-To-Date') {
                 this.info(tr('upToDate'));
@@ -2991,13 +3069,28 @@ function historyViewFactory(d3) {
 
         // three-way merge of the files; stops with an operation when files conflict
         _mergeFiles: function (target, label, noFF, currentCommit) {
+            var before = { index: clone(this.index), work: clone(this.work) },
+                base = this.mergeBase('HEAD', target.id),
+                result = this._threeWay(base ? base.tree : {}, target.tree, label);
+            if (result.conflicts.length) {
+                this.operation = { type: 'merge', theirs: target.id, label: label, noFF: noFF === true, before: before };
+                return { conflicts: result.conflicts };
+            }
+            if (noFF === true) {
+                this._markNoFF(target, currentCommit);
+            }
+            this.commit({ parent2: target.id, isNoFFCommit: noFF === true || undefined, tree: clone(result.tree) }, "Merge branch '" + label + "'");
+        },
+
+        // apply the change base -> theirs onto HEAD in index and working tree; conflicts are marked
+        // (staged changes and local changes in touched files are refused first)
+        _threeWay: function (base, theirs, label) {
             var head = this.headTree(), index = this.index, work = this.work;
             changedPaths(head, index).forEach(function (p) {
                 throw new Error(tr('localChanges', p));
             });
-            var base = this.mergeBase('HEAD', target.id),
-                style = this.config['merge.conflictstyle'] === 'diff3' ? 'diff3' : 'merge',
-                result = mergeTrees(base ? base.tree : {}, head, target.tree, { ours: 'HEAD', theirs: label }, style),
+            var style = this.config['merge.conflictstyle'] === 'diff3' ? 'diff3' : 'merge',
+                result = mergeTrees(base, head, theirs, { ours: 'HEAD', theirs: label }, style),
                 touched = allPaths(result.tree, head).filter(function (p) {
                     return !sameLines(head[p], result.tree[p]) || result.conflicts.indexOf(p) > -1;
                 });
@@ -3006,21 +3099,162 @@ function historyViewFactory(d3) {
                     throw new Error(tr('localChanges', p));
                 }
             });
-
-            var before = { index: clone(index), work: clone(work) };
             touched.forEach(function (p) {
                 setPath(index, p, result.tree[p]);
                 setPath(work, p, result.tree[p]);
             });
-            if (result.conflicts.length) {
-                result.conflicts.forEach(function (p) { index[p] = { unmerged: result.unmerged[p] }; });
-                this.operation = { type: 'merge', theirs: target.id, label: label, noFF: noFF === true, before: before };
-                return { conflicts: result.conflicts };
+            result.conflicts.forEach(function (p) { index[p] = { unmerged: result.unmerged[p] }; });
+            return result;
+        },
+
+        // the change one commit made (or its reverse) onto HEAD
+        applyCommit: function (commit, reverse) {
+            var parent = this.getCommit(commit.parent),
+                parentTree = (parent && parent.tree) || {},
+                label = commit.id + ' (' + (commit.message || '') + ')';
+            return reverse
+                ? this._threeWay(commit.tree, parentTree, label)
+                : this._threeWay(parentTree, commit.tree, label);
+        },
+
+        _fastForwardFiles: function (target) {
+            if (this.hasFiles()) {
+                this.switchTrees(target.tree, true);
+                this.switchTrees(target.tree);
             }
-            if (noFF === true) {
-                this._markNoFF(target, currentCommit);
+            this.fastForward(target);
+        },
+
+        // cherry-pick / revert / rebase: a list of commits applied one by one, stopping at conflicts
+        startSequence: function (type, items) {
+            if (this.operation) {
+                throw new Error(tr('operationInProgress', this.operation.type));
             }
-            this.commit({ parent2: target.id, isNoFFCommit: noFF === true || undefined, tree: clone(result.tree) }, "Merge branch '" + label + "'");
+            this.operation = {
+                type: type,
+                todo: items,
+                orig: { branch: this.currentBranch, head: this.getCommit('HEAD').id },
+                before: { index: clone(this.index), work: clone(this.work) },
+                map: {}
+            };
+            return this._continueSequence();
+        },
+
+        _rebaseFiles: function (base, toRebase, opt) {
+            if (this.operation) {
+                throw new Error(tr('operationInProgress', this.operation.type));
+            }
+            if (this.fileStatus().some(function (f) { return f.x !== '?'; })) {
+                throw new Error(tr('dirtyRebase'));
+            }
+            var orig = { branch: this.currentBranch, head: this.getCommit('HEAD').id },
+                before = { index: clone(this.index), work: clone(this.work) },
+                untracked = this.untracked();
+
+            if (this.currentBranch) {
+                this.moveTag(this.currentBranch, base.id);
+                this.checkout(this.currentBranch);
+            } else {
+                this.checkout(base.id);
+            }
+            this.index = clone(base.tree);
+            this.work = clone(base.tree);
+            untracked.forEach(function (p) {
+                if (!base.tree[p]) {
+                    this.work[p] = untracked.files[p];
+                }
+            }, this);
+
+            this.operation = {
+                type: 'rebase',
+                todo: toRebase.map(function (c) { return { id: c.id, kind: 'rebase' }; }),
+                orig: orig,
+                before: before,
+                updateRefs: !!opt.updateRefs,
+                map: {}
+            };
+            return this._continueSequence();
+        },
+
+        _continueSequence: function () {
+            var op = this.operation, done = [];
+            while (op.todo.length) {
+                var item = op.todo.shift(),
+                    commit = this.getCommit(item.id),
+                    result = this.applyCommit(commit, item.kind === 'revert');
+                if (result.conflicts.length) {
+                    op.current = item;
+                    return { conflicts: result.conflicts, at: commit, done: done };
+                }
+                done.push(this._commitStep(item));
+            }
+            this._finishSequence();
+            return { done: done };
+        },
+
+        _commitStep: function (item) {
+            var commit = this.getCommit(item.id);
+            if (item.kind === 'pick') {
+                this.commit({ cherryPickedFrom: commit.id }, commit.message);
+            } else if (item.kind === 'revert') {
+                commit.reverted = true;
+                this.commit({ reverts: commit.id }, 'Revert "' + (commit.message || commit.id) + '"');
+            } else {
+                this.commit({ rebased: true }, commit.message);
+                this.operation.map[commit.id] = this.getCommit('HEAD').id;
+            }
+            return { from: commit.id, to: this.getCommit('HEAD').id };
+        },
+
+        _finishSequence: function () {
+            var op = this.operation, view = this;
+            if (op.type === 'rebase' && op.updateRefs) {
+                Object.keys(op.map).forEach(function (old) {
+                    view.getCommit(old).tags.filter(function (t) {
+                        return view.isLocalBranch(t) && t !== view.currentBranch && view.worktreeOf(t) === null;
+                    }).forEach(function (t) {
+                        view._removeTag(t);
+                        view.getCommit(op.map[old]).tags.push(t);
+                    });
+                });
+                this.renderTags();
+            }
+            this.operation = null;
+        },
+
+        continueOperation: function (type) {
+            var op = this.operation;
+            if (!op || op.type !== type) {
+                throw new Error(tr('noOperation', type));
+            }
+            if (this.hasUnmerged()) {
+                throw new Error(tr('unmergedFiles'));
+            }
+            var done = [];
+            if (op.current) {
+                done.push(this._commitStep(op.current));
+                op.current = null;
+            }
+            var result = this._continueSequence();
+            result.done = done.concat(result.done);
+            return result;
+        },
+
+        skipOperation: function (type) {
+            var op = this.operation;
+            if (!op || op.type !== type || !op.current) {
+                throw new Error(tr('noOperation', type));
+            }
+            var head = this.headTree(), untracked = this.untracked();
+            this.index = clone(head);
+            this.work = clone(head);
+            untracked.forEach(function (p) {
+                if (!head[p] && !untracked.files[p].unmerged) {
+                    this.work[p] = untracked.files[p];
+                }
+            }, this);
+            op.current = null;
+            return this._continueSequence();
         },
 
         // layout: the merged branch is drawn beside, not on the main line
@@ -3078,7 +3312,7 @@ function historyViewFactory(d3) {
                     return 'Up-To-Date';
                 }
                 if (this.isAncestor(currentCommit, upstream)) {
-                    this.fastForward(upstream);
+                    this._fastForwardFiles(upstream);
                     return 'Fast-Forward';
                 }
             }
@@ -3090,8 +3324,12 @@ function historyViewFactory(d3) {
             }
 
             if (toRebase.length === 0) {
-                this.fastForward(base);
+                this._fastForwardFiles(base);
                 return 'Fast-Forward';
+            }
+
+            if (this.hasFiles()) {
+                return this._rebaseFiles(base, toRebase, opt);
             }
 
             rebaseTreeLoc = base.id;

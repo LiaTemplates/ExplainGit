@@ -137,6 +137,9 @@ const TEXT = {
     noOperation: t => `There is no ${t} to continue or abort.`,
     notUnmerged: p => `${p} has no conflict.`,
     configUsage: 'Usage: git config <key> [<value>] | --list',
+    dirtyRebase: 'Cannot rebase: you have changes. Commit or stash them first.',
+    stoppedAt: (id, m) => `Could not apply ${id}... ${m}`,
+    resolveHint: t => `Resolve the conflicts, mark them with git add, then run git ${t} --continue (or --skip, --abort).`,
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -270,6 +273,9 @@ const TEXT = {
     noOperation: t => `Es gibt keinen ${t} zum Fortsetzen oder Abbrechen.`,
     notUnmerged: p => `${p} hat keinen Konflikt.`,
     configUsage: 'Aufruf: git config <schlüssel> [<wert>] | --list',
+    dirtyRebase: 'Rebase nicht möglich: Es gibt Änderungen. Erst committen oder stashen.',
+    stoppedAt: (id, m) => `Konnte ${id}... ${m} nicht anwenden`,
+    resolveHint: t => `Konflikte lösen, mit git add markieren, dann git ${t} --continue (oder --skip, --abort).`,
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -403,6 +409,9 @@ const TEXT = {
     noOperation: t => `Немає ${t}, щоб продовжити чи скасувати.`,
     notUnmerged: p => `У ${p} немає конфлікту.`,
     configUsage: 'Використання: git config <ключ> [<значення>] | --list',
+    dirtyRebase: 'Неможливо виконати rebase: є зміни. Спершу закомітьте або сховайте (stash) їх.',
+    stoppedAt: (id, m) => `Не вдалося застосувати ${id}... ${m}`,
+    resolveHint: t => `Розв’яжіть конфлікти, позначте їх через git add, потім git ${t} --continue (або --skip, --abort).`,
     upToDate: 'Уже актуально.'
   }
 }

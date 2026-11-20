@@ -1,7 +1,7 @@
 import * as d3selection from 'd3-selection'
 import 'd3-transition'
 import { tr, fill } from './i18n.js'
-import { sameLines, formatDiff, changedPaths, diffStat, blobId, mergeTrees } from './files.js'
+import { sameLines, formatDiff, changedPaths, diffStat, blobId, mergeTrees, blame, lineMap, diffLines } from './files.js'
 
 // id of the pseudo commit before the first one; contains a space, so no command can name it
 export const ROOT = 'initial commit'
@@ -1482,6 +1482,11 @@ function controlBoxFactory() {
         // log [--oneline] [--graph] [--all] [-n] [--merges/--no-merges] [--first-parent] [-p] [--stat]
         //     [--left-right] [-S <text>] [<rev>... | <a>..<b> | <a>...<b> | ^<a> | --not <a>] [-- <path>]
         gitLog: function (args) {
+            var range = args.map(function (a, i) { return a === '-L' ? args[i + 1] : /^-L./.test(a) ? a.slice(2) : null; })
+                .filter(function (a) { return a !== null; })[0];
+            if (range !== undefined) {
+                return this._logRange(range);
+            }
             var hv = this.historyView, control = this,
                 dashes = args.indexOf('--'),
                 paths = dashes > -1 ? args.slice(dashes + 1) : [],
@@ -2021,6 +2026,132 @@ function controlBoxFactory() {
                 control.plain((names[t.kind] || t.kind) + ' ' + t.id + ' ' + (t.message || c.message || ''));
             });
             hv.highlight(hv.operation.todo.map(function (t) { return t.id; }));
+        },
+
+        // the range <a>,<b>:<file> (1-based) of HEAD and where it is in the working tree
+        _range: function (spec, lines) {
+            var m = /^(\d+),(\d+)$/.exec(spec || '');
+            if (!m || Number(m[1]) < 1 || Number(m[2]) < Number(m[1]) || Number(m[2]) > lines.length) {
+                throw new Error(tr('badRange', spec || ''));
+            }
+            return [Number(m[1]) - 1, Number(m[2]) - 1];
+        },
+
+        // blame [-L a,b] [<rev>] <file>
+        blame: function (args) {
+            var hv = this.historyView, control = this, l = args.indexOf('-L'), spec = null;
+            if (l > -1) {
+                spec = args[l + 1];
+                args = args.slice(0, l).concat(args.slice(l + 2));
+            }
+            args = args.filter(function (a) { return a !== '--'; });
+            var path = args[args.length - 1], rev = args.length > 1 ? args[0] : null,
+                commit = hv.getCommit(rev || 'HEAD');
+            if (!commit || commit.id === ROOT) {
+                throw new Error(tr('noRef', rev || 'HEAD'));
+            }
+            var committed = commit.tree && commit.tree[path],
+                file = rev ? committed : hv.work[path];
+            if (!path || !Array.isArray(file)) {
+                throw new Error(tr('noFile', path || ''));
+            }
+            var from = Array.isArray(committed) ? blame(commit, path, function (id) { return hv.getCommit(id); }) : [],
+                // the working tree: lines HEAD does not have are not committed yet
+                map = rev || !Array.isArray(committed) ? null : lineMap(file, committed),
+                who = file.map(function (line, i) {
+                    var c = map ? (map.has(i) ? from[map.get(i)] : null) : from[i];
+                    return c ? c.id + ' (' + (c.author || 'you') : '0000000 (Not Committed Yet';
+                }),
+                r = spec ? this._range(spec, file) : [0, file.length - 1];
+            for (var i = r[0]; i <= r[1]; i++) {
+                control.plain(who[i] + ' ' + (i + 1) + ') ' + file[i]);
+            }
+        },
+
+        // grep [-n] [-c] <text> [<rev>]: the text as it is (no regular expression)
+        grep: function (args) {
+            var hv = this.historyView, control = this,
+                num = args.indexOf('-n') > -1, count = args.indexOf('-c') > -1 || args.indexOf('--count') > -1,
+                words = tokenize(this._entry || '').slice(2).filter(function (a) { return a.charAt(0) !== '-'; }),
+                text = words[0], rev = words[1];
+            if (!text) {
+                throw new Error(tr('grepUsage'));
+            }
+            var files = {};
+            if (rev) {
+                var commit = hv.getCommit(rev);
+                if (!commit || commit.id === ROOT) {
+                    throw new Error(tr('noRef', rev));
+                }
+                files = commit.tree || {};
+            } else {
+                // tracked files as they are in the working tree
+                Object.keys(hv.index).forEach(function (p) {
+                    if (Array.isArray(hv.work[p])) {
+                        files[p] = hv.work[p];
+                    }
+                });
+            }
+            Object.keys(files).sort().forEach(function (p) {
+                var prefix = (rev ? rev + ':' : '') + p + ':', hits = 0;
+                files[p].forEach(function (line, i) {
+                    if (line.indexOf(text) > -1) {
+                        hits++;
+                        if (!count) {
+                            control.plain(prefix + (num ? (i + 1) + ':' : '') + line);
+                        }
+                    }
+                });
+                if (count && hits) {
+                    control.plain(prefix + hits);
+                }
+            });
+        },
+
+        // log -L <a>,<b>:<file>: the commits that changed these lines, newest first
+        _logRange: function (spec) {
+            var hv = this.historyView, control = this,
+                m = /^([^:]+):(.+)$/.exec(spec || ''),
+                commit = hv.getCommit('HEAD'),
+                path = m && m[2],
+                file = commit && commit.tree && commit.tree[path];
+            if (!m || !Array.isArray(file)) {
+                throw new Error(tr('noFile', path || spec || ''));
+            }
+            var r = this._range(m[1], file), shown = [];
+            while (commit && commit.id !== ROOT && r) {
+                var parent = hv.getCommit(commit.parent),
+                    old = parent && parent.tree && parent.tree[path],
+                    now = commit.tree[path].slice(r[0], r[1] + 1),
+                    next = null, before = [];
+                if (Array.isArray(old)) {
+                    // the range in the parent: between the nearest unchanged lines around it
+                    var cur = commit.tree[path], map = lineMap(cur, old), lo = 0, hi = old.length - 1, i;
+                    for (i = r[0] - 1; i >= 0; i--) {
+                        if (map.has(i)) { lo = map.get(i) + 1; break; }
+                    }
+                    for (i = r[1] + 1; i < cur.length; i++) {
+                        if (map.has(i)) { hi = map.get(i) - 1; break; }
+                    }
+                    if (lo <= hi) {
+                        next = [lo, hi];
+                        before = old.slice(lo, hi + 1);
+                    }
+                }
+                if (!sameLines(before, now)) {
+                    shown.push(commit.id);
+                    control.diffLine('commit ' + commit.id, 'commit');
+                    control._author(commit, 'ctx');
+                    control.diffLine('    ' + (commit.message || ''), 'ctx');
+                    control.diffLine('diff --git a/' + path + ' b/' + path, 'head');
+                    diffLines(before, now).forEach(function (d) {
+                        control.diffLine(d.op + d.line, d.op === '+' ? 'add' : d.op === '-' ? 'del' : 'ctx');
+                    });
+                }
+                commit = parent;
+                r = next;
+            }
+            hv.highlight(shown);
         },
 
         // bisect start [<bad> [<good>...]] | bad/new | good/old | skip [<rev>...] | reset | log

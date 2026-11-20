@@ -138,3 +138,28 @@ export function diffStat(a, b) {
 }
 
 export const sameLines = same
+
+// line index in `a` -> line index in `b`, for the lines both keep
+export const lineMap = matches
+
+// blame: for each line of `path` in `start`, the commit that brought it in. A line that a
+// parent has unchanged comes from that parent (first parent first), otherwise from the commit.
+export function blame(start, path, getCommit) {
+  const file = start.tree[path]
+  const result = new Array(file.length)
+  const walk = (commit, lines) => {
+    let left = lines
+    for (const pid of [commit.parent, commit.parent2]) {
+      const parent = pid && getCommit(pid)
+      const old = parent && parent.tree && parent.tree[path]
+      if (!Array.isArray(old) || !left.length) continue
+      const m = matches(commit.tree[path], old)
+      const pass = left.filter(([i]) => m.has(i))
+      left = left.filter(([i]) => !m.has(i))
+      if (pass.length) walk(parent, pass.map(([i, f]) => [m.get(i), f]))
+    }
+    for (const [, f] of left) result[f] = commit
+  }
+  walk(start, file.map((_, i) => [i, i]))
+  return result
+}

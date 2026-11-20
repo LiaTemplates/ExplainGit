@@ -28,6 +28,7 @@ export const SCRIPTS = [
   { name: 'tags', opts: { origin: true }, cmds: ['git commit -m a', 'git tag -a v1 -m one', 'git commit -m b', 'git tag v2', 'git push --follow-tags', 'git describe', 'git tag -d v2'] },
   { name: 'branch info and alias', opts: { origin: true }, cmds: ['git commit -m a', 'git push', 'git commit -m b', 'git branch -vv', 'git config alias.co checkout', 'git co -b dev', 'git branch --merged master'] },
   { name: 'team', opts: { origin: true }, cmds: ['git commit -m start', 'git push', '@origin git config user.name Jessica', '@origin git commit -m j', 'git commit -m john', 'git push', 'git fetch', 'git merge origin/master', 'git push'] },
+  { name: 'tracking', opts: { origin: true }, cmds: ['@origin git switch -c serverfix', '@origin git commit -m fix', 'git fetch', 'git switch serverfix', 'git commit -m more', 'git push origin +serverfix:awesome', 'git fetch origin master:refs/remotes/origin/mine'] },
 ]
 
 // graph, file contents, index and working tree; also in another language

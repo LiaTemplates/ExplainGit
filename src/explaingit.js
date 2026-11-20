@@ -701,6 +701,15 @@ function controlBoxFactory() {
                 name = hv.previousBranch;
             }
 
+            // switch serverfix: a local branch from the one remote branch with that name
+            if (!opt.create && !opt.detach && !hv.isLocalBranch(name) && !(opt.lenient && hv.getCommit(name))) {
+                var guess = hv.remotes.filter(function (r) { return hv.getCommit(r + '/' + name); });
+                if (guess.length === 1) {
+                    opt.create = true;
+                    opt.start = guess[0] + '/' + name;
+                }
+            }
+
             if (!opt.detach && hv.isLocalBranch(name) && name !== hv.currentBranch) {
                 hv.checkFree(name);
             }
@@ -740,6 +749,24 @@ function controlBoxFactory() {
             }
             hv.switchTrees(target.tree);
             hv.checkout(name);
+            // a branch started from a remote branch follows it
+            if (opt.create && opt.start && hv.isRemoteRef(opt.start) && hv.isLocalBranch(name)) {
+                hv.upstream[name] = opt.start;
+                this.info(tr('upstreamSet', name, opt.start));
+            }
+        },
+
+        // --track <remote>/<b>: create <b> (or the -b/-c name) from it
+        _track: function (name, opt) {
+            if (opt.track === undefined) {
+                return name;
+            }
+            if (!opt.track || !this.historyView.isRemoteRef(opt.track)) {
+                throw new Error(tr('noRef', opt.track || ''));
+            }
+            opt.create = true;
+            opt.start = opt.track;
+            return name || opt.track.slice(opt.track.indexOf('/') + 1);
         },
 
         checkout: function (args) {
@@ -767,12 +794,15 @@ function controlBoxFactory() {
                     opt.start = args.shift();
                 } else if (arg === '--detach') {
                     opt.detach = true;
+                } else if (arg === '-t' || arg === '--track') {
+                    opt.track = args.shift();
                 } else {
                     name = [arg].concat(args).join(' ');
                     args.length = 0;
                 }
             }
 
+            name = this._track(name, opt);
             if (!name && !opt.detach) {
                 throw new Error(tr('needBranchName'));
             }
@@ -791,11 +821,14 @@ function controlBoxFactory() {
                     opt.start = args.shift();
                 } else if (arg === '-d' || arg === '--detach') {
                     opt.detach = true;
+                } else if (arg === '-t' || arg === '--track') {
+                    opt.track = args.shift();
                 } else if (!name) {
                     name = arg;
                 }
             }
 
+            name = this._track(name, opt);
             if (!name && !opt.detach) {
                 throw new Error(tr('switchUsage'));
             }
@@ -2039,12 +2072,34 @@ function controlBoxFactory() {
             var remote = this.remotes[name],
                 local = this.historyView,
                 messages = [],
-                branches = Object.keys(remote.refSnapshot().branches).sort();
+                branches = Object.keys(remote.refSnapshot().branches).sort(),
+                // fetch <remote> [+]<src>[:<dst>]: only <src>, stored as <dst>
+                spec = args.indexOf('--all') === -1 && /^(\+?)([^:]+)(?::(.+))?$/.exec(args.filter(function (a) { return a.charAt(0) !== '-'; })[1] || ''),
+                dest = function (b) { return name + '/' + b; };
+
+            if (spec) {
+                var src = spec[2].replace(/^refs\/heads\//, ''),
+                    dst = spec[3] && spec[3].replace(/^refs\/(remotes|heads)\//, '');
+                if (!remote.isLocalBranch(src)) {
+                    throw new Error(tr('noRef', src));
+                }
+                if (dst) {
+                    if (dst === local.currentBranch) {
+                        throw new Error(tr('fetchIntoCurrent', dst));
+                    }
+                    var old = local.getCommit(dst);
+                    if (old && !spec[1] && !local.isAncestor(old.id, remote.getCommit(src).id) && !remote.isAncestor(old.id, src)) {
+                        throw new Error(tr('notFastForward'));
+                    }
+                }
+                branches = [src];
+                dest = function () { return dst || name + '/' + src; };
+            }
 
             branches.forEach(function (b) {
                 var tip = remote.getCommit(b),
                     count = copyCommits(remote, local, tip),
-                    tracking = name + '/' + b,
+                    tracking = dest(b),
                     known = local.getCommit(tracking);
                 if (known || count) {
                     messages.push(tr('fetched', count, b));
@@ -2079,10 +2134,13 @@ function controlBoxFactory() {
             var control = this,
                 local = this.historyView,
                 currentBranch = local.currentBranch,
-                rtBranch = local.upstream[currentBranch] || 'origin/' + currentBranch,
-                isFastForward = false;
+                positional = args.filter(function (a) { return a.charAt(0) !== '-'; }),
+                upstream = local.upstream[currentBranch],
+                remoteName = positional[0] || (upstream ? upstream.slice(0, upstream.indexOf('/')) : 'origin'),
+                rtBranch = positional[1] ? remoteName + '/' + positional[1]
+                    : upstream && upstream.indexOf(remoteName + '/') === 0 ? upstream : remoteName + '/' + currentBranch;
 
-            this.fetch();
+            this.fetch(positional.slice(0, 2));
 
             if (!currentBranch) {
                 throw new Error(tr('notOnBranch'));
@@ -2097,7 +2155,7 @@ function controlBoxFactory() {
             }
 
             // at once, not after a delay: replaying commands must give the same state
-            var result = args[0] === '--rebase' || control.rebaseConfig[currentBranch] === 'true' || local.config['pull.rebase'] === 'true'
+            var result = args.indexOf('--rebase') > -1 || control.rebaseConfig[currentBranch] === 'true' || local.config['pull.rebase'] === 'true'
                 ? local.rebase(rtBranch)
                 : local.merge(rtBranch);
 
@@ -2159,11 +2217,12 @@ function controlBoxFactory() {
 
             var remoteName = positional[0] || 'origin',
                 remote = this.remotes[remoteName],
-                refspec = /^([^:]*)(:?)(.*)$/.exec(positional[1] || ''),
+                refspec = /^([^:]*)(:?)(.*)$/.exec((positional[1] || '').replace(/^\+/, function () { opt.force = true; return ''; })),
                 localRef = refspec[1] || local.currentBranch,
                 remoteRef = refspec[2] === ':' ? refspec[3] : localRef,
                 tracking = remoteName + '/' + remoteRef;
 
+            positional[1] = positional[1] && positional[1].replace(/^\+/, '');
             if (remoteName === 'history') {
                 throw new Error(tr('remoteHistory'));
             }

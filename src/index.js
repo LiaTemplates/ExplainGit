@@ -33,8 +33,8 @@ function injectOnce() {
 
 // runs commands in a hidden sandbox and returns its state
 const expectedCache = new Map()
-function simulate(cmds, origin, init) {
-  const key = JSON.stringify([cmds, origin, init])
+function simulate(cmds, origin, init, world) {
+  const key = JSON.stringify([cmds, origin, init, world])
   if (expectedCache.has(key)) return expectedCache.get(key)
 
   injectOnce()
@@ -43,7 +43,7 @@ function simulate(cmds, origin, init) {
   host.setAttribute('aria-hidden', 'true')
   host.style.cssText = 'position:absolute;left:-10000px;top:0;width:800px;visibility:hidden'
   document.body.appendChild(host)
-  const box = new Sandbox(host, 'expected-' + expectedCache.size, { origin, init, intro: '' })
+  const box = new Sandbox(host, 'expected-' + expectedCache.size, { origin, init, world, intro: '' })
   for (const cmd of cmds) box.run(cmd)
   const state = snapshot(box)
   box.destroy()
@@ -77,6 +77,7 @@ class Widget {
     this.setup = quiz ? quiz.setup : plain.cmds
     this.origin = quiz ? quiz.origin : plain.origin
     this.init = quiz ? quiz.init : plain.init
+    this.world = quiz ? quiz.world : plain.world
     this.quiz = quiz
 
     root.innerHTML = ''
@@ -118,7 +119,7 @@ class Widget {
 
   rebuild(cmds, who) {
     if (this.box) this.box.destroy()
-    this.box = new Sandbox(this.area, this.id, { origin: this.origin, init: this.init, intro: tr('intro') })
+    this.box = new Sandbox(this.area, this.id, { origin: this.origin, init: this.init, world: this.world, intro: tr('intro') })
     this.box.cb.onInput = cmd => this.input(cmd)
     for (const cmd of this.setup) this.box.run(cmd)
     for (const cmd of cmds) this.box.run(cmd)
@@ -264,7 +265,7 @@ class Widget {
       this.rebuild(q.solution)
       return false
     }
-    const expected = simulate(q.setup.concat(q.solution), q.origin, q.init)
+    const expected = simulate(q.setup.concat(q.solution), q.origin, q.init, q.world)
     const all = q.setup.concat(q.solution)
     const problems = compare(snapshot(this.box), expected, { status: needsStatus(all), files: needsFiles(all) })
     if (problems.length) throw new Error(problems.join(' '))

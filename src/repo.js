@@ -11,17 +11,19 @@ import { blobId } from './files.js'
 // `git init -b <name>` as the first command names the first branch
 export function parseCommands(text) {
   const cmds = []
-  let origin = false
+  const world = []
   let init = 'master'
   for (let line of String(text || '').split(/\r?\n/)) {
     line = line.trim()
     if (!line || line.startsWith('#')) continue
     const named = cmds.length === 0 && /^git init (?:-b |--initial-branch=)(\S+)$/.exec(line)
-    if (line === 'create origin') origin = true
+    const create = /^create (\S+)$/.exec(line)
+    if (create) world.push(create[1])
     else if (named) init = named[1]
     else cmds.push(line)
   }
-  return { cmds, origin, init }
+  // `create origin` also makes it the remote origin (as in 0.1.0)
+  return { cmds, origin: world.includes('origin'), init, world }
 }
 
 // quiz text: setup commands, a line of ---, solution commands
@@ -33,6 +35,7 @@ export function parseQuiz(text) {
   const l = parseCommands(solution)
   return {
     origin: s.origin || l.origin,
+    world: [...new Set(s.world.concat(l.world))],
     init: s.init !== 'master' ? s.init : l.init,
     setup: s.cmds,
     solution: l.cmds
@@ -45,7 +48,7 @@ export const initialCommits = (branch = 'master') => [
 
 // a repository with its views, rendered into `area`
 export class Sandbox {
-  constructor(area, name, { origin = false, init = 'master', intro = '' } = {}) {
+  constructor(area, name, { origin = false, init = 'master', intro = '', world = [] } = {}) {
     this.name = name
     const playground = select(area).append('div').classed('playground-container', true)
 
@@ -61,31 +64,41 @@ export class Sandbox {
       commitData: local
     })
 
-    this.ov = null
-    if (origin) {
-      this.ov = new HistoryView({
-        name: 'ExplainGit-' + name + '-Origin',
-        seed: name + '-origin',
+    // the world: other repositories (servers, colleagues); origin is also a remote of ours
+    this.world = Object.create(null)
+    this.playground = playground
+    this.panes = []
+    const names = [...new Set((origin ? ['origin'] : []).concat(world || []))]
+    names.forEach(repo => {
+      this.world[repo] = new HistoryView({
+        name: 'ExplainGit-' + name + (repo === 'origin' ? '-Origin' : '-World-' + repo),
+        seed: name + '-' + repo,
         width: 300,
         height: 225,
         commitRadius: 15,
-        remoteName: 'origin',
+        remoteName: repo,
         currentBranch: init,
         commitData: initialCommits(init)
       })
-      this.ov.render(playground)
+    })
+    this.ov = this.world.origin || null
+    const remotes = Object.create(null)
+    if (origin) {
+      remotes.origin = this.ov
+      this.showRepo(this.ov)
     }
 
     this.cb = new ControlBox({
       historyView: this.hv,
-      originView: this.ov,
+      remotes: remotes,
+      world: this.world,
+      showRepo: view => this.showRepo(view),
       initialMessage: intro
     })
     this.cb.render(playground)
     this.hv.render(playground)
     this.hv.svg.attr('role', 'img').attr('aria-label', tr('graph'))
     this.hv.initReflog()
-    this.playground = playground
 
     // files panel below the graph area
     this.filesPanel = document.createElement('table')
@@ -93,6 +106,14 @@ export class Sandbox {
     area.insertAdjacentElement('afterend', this.filesPanel)
     this.hv.filesPanel = this.filesPanel
     this.hv.renderFiles()
+  }
+
+  // a pane for a repository of the world, stacked on the right
+  showRepo(view) {
+    if (this.panes.includes(view)) return
+    view.render(this.playground)
+    view.svgContainer.style('top', this.panes.length * 230 + 'px')
+    this.panes.push(view)
   }
 
   run(cmd, who) {
@@ -103,7 +124,7 @@ export class Sandbox {
     try {
       this.cb.destroy()
       this.hv.destroy()
-      if (this.ov) this.ov.destroy()
+      this.panes.forEach(view => view.destroy())
     } catch (e) {}
     this.playground.remove()
     this.filesPanel.remove()
@@ -178,7 +199,8 @@ export function encode(starts, withTrees) {
 
 export function snapshot(sandbox) {
   const views = [['', viewInfo(sandbox.hv)]]
-  if (sandbox.ov) views.push(['origin/', viewInfo(sandbox.ov)])
+  const remotes = sandbox.cb.remotes
+  Object.keys(remotes).sort().forEach(name => views.push([name + '/', viewInfo(remotes[name])]))
   return views
 }
 
@@ -229,7 +251,7 @@ export function compare(actual, expected, { status = true, files = false } = {})
     }
     for (const name of Object.keys(act.refs).sort()) {
       // remote tracking branches only matter if the solution has them
-      if (!(name in exp.refs) && !name.startsWith('origin/'))
+      if (!(name in exp.refs) && !expected.some(([sc]) => sc && name.startsWith(sc)))
         problems.push(say(tr('extra', refLabel(name))))
     }
   }

@@ -16,7 +16,7 @@ export function run(cmds, opts = {}) {
   document.body.appendChild(area)
   const lang = document.documentElement.lang
   if (opts.lang) document.documentElement.lang = opts.lang
-  const box = new repo.Sandbox(area, opts.name || 'test', { origin: !!opts.origin, init: opts.init || 'master', intro: '' })
+  const box = new repo.Sandbox(area, opts.name || 'test', { origin: !!opts.origin, init: opts.init || 'master', intro: '', world: opts.world })
   try {
     for (const cmd of cmds) box.run(cmd)
   } finally {

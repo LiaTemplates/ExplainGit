@@ -1,0 +1,576 @@
+[
+ {
+  "cmds": [
+   "git commit -m a",
+   "git push",
+   "git commit -m b",
+   "git push"
+  ],
+  "init": "master",
+  "local": [
+   [
+    "e137e9b",
+    "initial commit",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "66d875c",
+    "e137e9b",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "2f20c72",
+    "66d875c",
+    null,
+    [
+     "HEAD",
+     "master",
+     "origin/master"
+    ],
+    "{}"
+   ]
+  ],
+  "origin": [
+   [
+    "e137e9b",
+    "initial commit",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "66d875c",
+    "e137e9b",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "2f20c72",
+    "66d875c",
+    null,
+    [
+     "HEAD",
+     "master"
+    ],
+    "{}"
+   ]
+  ],
+  "refs": {
+   "master": "2f20c72",
+   "origin/master": "2f20c72"
+  },
+  "log": [
+   "info:Enter git commands below.",
+   "cmd:git commit -m a",
+   "cmd:git push",
+   "cmd:git commit -m b",
+   "cmd:git push"
+  ]
+ },
+ {
+  "cmds": [
+   "git commit",
+   "git push",
+   "git reset HEAD^",
+   "git pull"
+  ],
+  "init": "master",
+  "local": [
+   [
+    "e137e9b",
+    "initial commit",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "66d875c",
+    "e137e9b",
+    null,
+    [
+     "HEAD",
+     "master",
+     "origin/master"
+    ],
+    "{}"
+   ]
+  ],
+  "origin": [
+   [
+    "e137e9b",
+    "initial commit",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "66d875c",
+    "e137e9b",
+    null,
+    [
+     "HEAD",
+     "master"
+    ],
+    "{}"
+   ]
+  ],
+  "refs": {
+   "origin/master": "66d875c",
+   "master": "66d875c"
+  },
+  "log": [
+   "info:Enter git commands below.",
+   "cmd:git commit",
+   "cmd:git push",
+   "cmd:git reset HEAD^",
+   "cmd:git pull",
+   "info:Fetched 0 commits on master. ",
+   "info:Fast-forwarded to origin/master."
+  ]
+ },
+ {
+  "cmds": [
+   "git switch -c dev",
+   "git commit",
+   "git push -u origin dev",
+   "git push origin --delete dev",
+   "git fetch --prune"
+  ],
+  "init": "master",
+  "local": [
+   [
+    "e137e9b",
+    "initial commit",
+    null,
+    [
+     "master",
+     "origin/master"
+    ],
+    "{}"
+   ],
+   [
+    "66d875c",
+    "e137e9b",
+    null,
+    [
+     "HEAD",
+     "dev"
+    ],
+    "{}"
+   ]
+  ],
+  "origin": [
+   [
+    "e137e9b",
+    "initial commit",
+    null,
+    [
+     "HEAD",
+     "master"
+    ],
+    "{}"
+   ],
+   [
+    "66d875c",
+    "e137e9b",
+    null,
+    [],
+    "{}"
+   ]
+  ],
+  "refs": {
+   "master": "e137e9b",
+   "origin/master": "e137e9b",
+   "dev": "66d875c"
+  },
+  "log": [
+   "info:Enter git commands below.",
+   "cmd:git switch -c dev",
+   "cmd:git commit",
+   "cmd:git push -u origin dev",
+   "info:Branch dev tracks origin/dev.",
+   "cmd:git push origin --delete dev",
+   "info:Deleted remote branch dev.",
+   "cmd:git fetch --prune",
+   "info:Fetched 0 commits on master. "
+  ]
+ },
+ {
+  "cmds": [
+   "git commit -m a",
+   "git push",
+   "git commit --amend -m b",
+   "git push --force-with-lease"
+  ],
+  "init": "master",
+  "local": [
+   [
+    "e137e9b",
+    "initial commit",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "66d875c",
+    "e137e9b",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "2f20c72",
+    "e137e9b",
+    null,
+    [
+     "HEAD",
+     "master",
+     "origin/master"
+    ],
+    "{}"
+   ]
+  ],
+  "origin": [
+   [
+    "e137e9b",
+    "initial commit",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "66d875c",
+    "e137e9b",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "2f20c72",
+    "e137e9b",
+    null,
+    [
+     "HEAD",
+     "master"
+    ],
+    "{}"
+   ]
+  ],
+  "refs": {
+   "master": "2f20c72",
+   "origin/master": "2f20c72"
+  },
+  "log": [
+   "info:Enter git commands below.",
+   "cmd:git commit -m a",
+   "cmd:git push",
+   "cmd:git commit --amend -m b",
+   "cmd:git push --force-with-lease"
+  ]
+ },
+ {
+  "cmds": [
+   "git commit -m a",
+   "git push",
+   "git reset --hard HEAD~",
+   "git commit -m b",
+   "git pull --ff-only"
+  ],
+  "init": "master",
+  "local": [
+   [
+    "e137e9b",
+    "initial commit",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "66d875c",
+    "e137e9b",
+    null,
+    [
+     "origin/master"
+    ],
+    "{}"
+   ],
+   [
+    "2f20c72",
+    "e137e9b",
+    null,
+    [
+     "HEAD",
+     "master"
+    ],
+    "{}"
+   ]
+  ],
+  "origin": [
+   [
+    "e137e9b",
+    "initial commit",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "66d875c",
+    "e137e9b",
+    null,
+    [
+     "HEAD",
+     "master"
+    ],
+    "{}"
+   ]
+  ],
+  "refs": {
+   "origin/master": "66d875c",
+   "master": "2f20c72"
+  },
+  "log": [
+   "info:Enter git commands below.",
+   "cmd:git commit -m a",
+   "cmd:git push",
+   "cmd:git reset --hard HEAD~",
+   "cmd:git commit -m b",
+   "cmd:git pull --ff-only",
+   "info:Fetched 0 commits on master. ",
+   "error:Not possible to fast-forward, aborting."
+  ]
+ },
+ {
+  "cmds": [
+   "echo a > f",
+   "git add f",
+   "git commit -m a",
+   "git push",
+   "echo b > g",
+   "git add g",
+   "git commit -m b",
+   "git push",
+   "git reset --hard HEAD~",
+   "echo c > h",
+   "git add h",
+   "git commit -m c",
+   "git pull --rebase"
+  ],
+  "init": "master",
+  "local": [
+   [
+    "e137e9b",
+    "initial commit",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "66d875c",
+    "e137e9b",
+    null,
+    [],
+    "{\"f\":[\"a\"]}"
+   ],
+   [
+    "2f20c72",
+    "66d875c",
+    null,
+    [
+     "origin/master"
+    ],
+    "{\"f\":[\"a\"],\"g\":[\"b\"]}"
+   ],
+   [
+    "ed54462",
+    "66d875c",
+    null,
+    [],
+    "{\"f\":[\"a\"],\"h\":[\"c\"]}"
+   ],
+   [
+    "68288cd",
+    "2f20c72",
+    null,
+    [
+     "HEAD",
+     "master"
+    ],
+    "{\"f\":[\"a\"],\"g\":[\"b\"],\"h\":[\"c\"]}"
+   ]
+  ],
+  "origin": [
+   [
+    "e137e9b",
+    "initial commit",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "66d875c",
+    "e137e9b",
+    null,
+    [],
+    "{\"f\":[\"a\"]}"
+   ],
+   [
+    "2f20c72",
+    "66d875c",
+    null,
+    [
+     "HEAD",
+     "master"
+    ],
+    "{\"f\":[\"a\"],\"g\":[\"b\"]}"
+   ]
+  ],
+  "refs": {
+   "origin/master": "2f20c72",
+   "master": "68288cd"
+  },
+  "log": [
+   "info:Enter git commands below.",
+   "cmd:echo a > f",
+   "cmd:git add f",
+   "cmd:git commit -m a",
+   "cmd:git push",
+   "cmd:echo b > g",
+   "cmd:git add g",
+   "cmd:git commit -m b",
+   "cmd:git push",
+   "cmd:git reset --hard HEAD~",
+   "cmd:echo c > h",
+   "cmd:git add h",
+   "cmd:git commit -m c",
+   "cmd:git pull --rebase",
+   "info:Fetched 0 commits on master. "
+  ]
+ },
+ {
+  "cmds": [
+   "git commit -m a",
+   "git tag -a v1 -m x",
+   "git push --follow-tags",
+   "git fetch",
+   "git branch -vv"
+  ],
+  "init": "master",
+  "local": [
+   [
+    "e137e9b",
+    "initial commit",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "66d875c",
+    "e137e9b",
+    null,
+    [
+     "HEAD",
+     "[v1]",
+     "master",
+     "origin/master"
+    ],
+    "{}"
+   ]
+  ],
+  "origin": [
+   [
+    "e137e9b",
+    "initial commit",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "66d875c",
+    "e137e9b",
+    null,
+    [
+     "HEAD",
+     "[v1]",
+     "master"
+    ],
+    "{}"
+   ]
+  ],
+  "refs": {
+   "master": "66d875c",
+   "[v1]": "66d875c",
+   "origin/master": "66d875c"
+  },
+  "log": [
+   "info:Enter git commands below.",
+   "cmd:git commit -m a",
+   "cmd:git tag -a v1 -m x",
+   "cmd:git push --follow-tags",
+   "cmd:git fetch",
+   "info:Fetched 0 commits on master. ",
+   "cmd:git branch -vv",
+   "info:* master 66d875c [origin/master] a"
+  ]
+ },
+ {
+  "cmds": [
+   "git init -b main",
+   "git commit",
+   "git push"
+  ],
+  "init": "main",
+  "local": [
+   [
+    "e137e9b",
+    "initial commit",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "66d875c",
+    "e137e9b",
+    null,
+    [
+     "HEAD",
+     "main",
+     "origin/main"
+    ],
+    "{}"
+   ]
+  ],
+  "origin": [
+   [
+    "e137e9b",
+    "initial commit",
+    null,
+    [],
+    "{}"
+   ],
+   [
+    "66d875c",
+    "e137e9b",
+    null,
+    [
+     "HEAD",
+     "main"
+    ],
+    "{}"
+   ]
+  ],
+  "refs": {
+   "main": "66d875c",
+   "origin/main": "66d875c"
+  },
+  "log": [
+   "info:Enter git commands below.",
+   "cmd:git commit",
+   "cmd:git push"
+  ]
+ }
+]

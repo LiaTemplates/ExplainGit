@@ -41,6 +41,24 @@ var sameTree = function (a, b) {
     return keys.every(function (k) { return sameLines(a[k], b[k]); });
 };
 
+// copy the commits `to` does not have yet, parents first; returns how many
+var copyCommits = function (from, to, commit) {
+    var list = [],
+        copy = function (c) {
+            while (c && c.id !== ROOT && to.getCommit(c.id) === null &&
+                   list.every(function (p) { return p.id !== c.id; })) {
+                list.unshift({ id: c.id, parent: c.parent, parent2: c.parent2, message: c.message, author: c.author, tree: clone(c.tree), tags: [] });
+                if (typeof c.parent2 === 'string') {
+                    copy(from.getCommit(c.parent2));
+                }
+                c = from.getCommit(c.parent);
+            }
+        };
+    copy(commit);
+    to.commitData = to.commitData.concat(list);
+    return list.length;
+};
+
 // width of a branch or tag label, as renderTags draws it
 var labelWidth = function (name) {
     return (name.length * 6) + 10;
@@ -62,7 +80,10 @@ function controlBoxFactory() {
      */
     function ControlBox(config) {
         this.historyView = config.historyView;
-        this.originView = config.originView;
+        this.remotes = config.remotes || Object.create(null); // name -> view of the remotes we know
+        this.world = config.world || Object.create(null);     // every repository of the course
+        this.showRepo = config.showRepo || function () {};
+        this.originView = this.remotes.origin || null;
         this.initialMessage = config.initialMessage || 'Enter git commands below.';
         this._commandHistory = [];
         this._currentCommand = -1;
@@ -1816,94 +1837,62 @@ function controlBoxFactory() {
             }
         },
 
+        // fetch [<remote> | --all] [--prune]: every branch of the remote to <remote>/<branch>, and tags
         fetch: function (args) {
-            if (!this.originView) {
+            args = args || [];
+            var control = this,
+                names = args.indexOf('--all') > -1 ? Object.keys(this.remotes).sort()
+                    : [args.filter(function (a) { return a.charAt(0) !== '-'; })[0] || 'origin'];
+            if (!Object.keys(this.remotes).length) {
                 throw new Error(tr('noRemote'));
             }
+            names.forEach(function (name) {
+                if (!control.remotes[name]) {
+                    throw new Error(tr('noRemoteNamed', name));
+                }
+            });
+            names.forEach(function (name) { control._fetchFrom(name, args); });
+            this.historyView.renderCommits();
+        },
 
-            var origin = this.originView,
+        _fetchFrom: function (name, args) {
+            var remote = this.remotes[name],
                 local = this.historyView,
-                remotePattern = /^origin\/(.+)$/,
-                rtb, isRTB, fb,
-                fetchBranches = {},
-                fetchIds = [], // just to make sure we don't fetch the same commit twice
-                fetchCommits = [], fetchCommit,
-                resultMessage = '';
+                messages = [],
+                branches = Object.keys(remote.refSnapshot().branches).sort();
 
-            // determine which branches to fetch
-            for (rtb = 0; rtb < local.branches.length; rtb++) {
-                isRTB = remotePattern.exec(local.branches[rtb]);
-                if (isRTB) {
-                    fetchBranches[isRTB[1]] = 0;
+            branches.forEach(function (b) {
+                var tip = remote.getCommit(b),
+                    count = copyCommits(remote, local, tip),
+                    tracking = name + '/' + b,
+                    known = local.getCommit(tracking);
+                if (known || count) {
+                    messages.push(tr('fetched', count, b));
                 }
-            }
-
-            // determine which commits the local repo is missing from the origin
-            for (fb in fetchBranches) {
-                if (origin.branches.indexOf(fb) > -1) {
-                    fetchCommit = origin.getCommit(fb);
-
-                    var notInLocal = local.getCommit(fetchCommit.id) === null;
-                    while (notInLocal) {
-                        if (fetchIds.indexOf(fetchCommit.id) === -1) {
-                            fetchCommits.unshift(fetchCommit);
-                            fetchIds.unshift(fetchCommit.id);
-                        }
-                        fetchBranches[fb] += 1;
-                        fetchCommit = origin.getCommit(fetchCommit.parent);
-                        notInLocal = local.getCommit(fetchCommit.id) === null;
-                    }
-                }
-            }
-
-            // add the fetched commits to the local commit data
-            for (var fc = 0; fc < fetchCommits.length; fc++) {
-                fetchCommit = fetchCommits[fc];
-                local.commitData.push({
-                    id: fetchCommit.id,
-                    parent: fetchCommit.parent,
-                    parent2: fetchCommit.parent2,
-                    message: fetchCommit.message,
-                    tree: clone(fetchCommit.tree),
-                    tags: []
-                });
-            }
-
-            // update the remote tracking branch tag locations
-            for (fb in fetchBranches) {
-                if (origin.branches.indexOf(fb) > -1) {
-                    var remoteLoc = origin.getCommit(fb).id;
-                    local.moveTag('origin/' + fb, remoteLoc);
-                }
-
-                resultMessage += tr('fetched', fetchBranches[fb], fb) + ' ';
-            }
+                local.moveTag(tracking, tip.id);
+            });
 
             // tags on commits we have come along
-            origin.tagNames().forEach(function (t) {
-                var c = local.getCommit(origin.getCommit('[' + t + ']').id);
+            remote.tagNames().forEach(function (t) {
+                var c = local.getCommit(remote.getCommit('[' + t + ']').id);
                 if (c && local.tagNames().indexOf(t) === -1) {
                     c.tags.push('[' + t + ']');
-                    if (origin.tagInfo[t]) {
-                        local.tagInfo[t] = origin.tagInfo[t];
+                    if (remote.tagInfo[t]) {
+                        local.tagInfo[t] = remote.tagInfo[t];
                     }
                 }
             });
 
-            // --prune: drop origin/<b> when the remote has no <b> any more
-            if (args && (args.indexOf('--prune') > -1 || args.indexOf('-p') > -1)) {
+            // --prune: drop <remote>/<b> when the remote has no <b> any more
+            if (args.indexOf('--prune') > -1 || args.indexOf('-p') > -1) {
                 local.branches.slice().forEach(function (b) {
-                    var m = remotePattern.exec(b);
-                    if (m && !origin.isLocalBranch(m[1])) {
+                    if (b.indexOf(name + '/') === 0 && !remote.isLocalBranch(b.slice(name.length + 1))) {
                         local._removeTag(b);
                     }
                 });
                 local.renderTags();
             }
-
-            this.info(resultMessage);
-
-            local.renderCommits();
+            this.info(messages.join(' ') + (messages.length ? ' ' : ''));
         },
 
         pull: function (args) {
@@ -1944,21 +1933,8 @@ function controlBoxFactory() {
             }
         },
 
-        // copy the commits the remote does not have yet, parents first
         _copyCommits: function (remote, commit) {
-            var local = this.historyView, toPush = [],
-                copy = function (c) {
-                    while (c && c.id !== ROOT && remote.getCommit(c.id) === null &&
-                           toPush.every(function (p) { return p.id !== c.id; })) {
-                        toPush.unshift({ id: c.id, parent: c.parent, parent2: c.parent2, message: c.message, tree: clone(c.tree), tags: [] });
-                        if (typeof c.parent2 === 'string') {
-                            copy(local.getCommit(c.parent2));
-                        }
-                        c = local.getCommit(c.parent);
-                    }
-                };
-            copy(commit);
-            remote.commitData = remote.commitData.concat(toPush);
+            copyCommits(this.historyView, remote, commit);
         },
 
         _pushTag: function (remote, name) {
@@ -2002,7 +1978,7 @@ function controlBoxFactory() {
             });
 
             var remoteName = positional[0] || 'origin',
-                remote = this[remoteName + 'View'],
+                remote = this.remotes[remoteName],
                 refspec = /^([^:]*)(:?)(.*)$/.exec(positional[1] || ''),
                 localRef = refspec[1] || local.currentBranch,
                 remoteRef = refspec[2] === ':' ? refspec[3] : localRef,

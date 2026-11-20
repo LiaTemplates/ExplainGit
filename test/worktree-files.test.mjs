@@ -104,3 +104,24 @@ test('clean -n lists, clean -f removes untracked files only', () => {
 })
 test('clean without -n or -f is refused', () => unchanged(['echo a > f', 'git add f', 'git commit', 'echo u > u'], 'git clean'))
 test('legacy reset still works without files', () => assert.equal(viewInfo(run(['git commit', 'git reset --soft HEAD^']).box.hv).status, 'staged'))
+
+// --- Task 5: files panel
+import { blobId } from '../src/files.js'
+const panel = box => box.hv.filesPanel
+const rows = box => [...panel(box).querySelectorAll('tbody tr')].map(tr => [...tr.children].map(c => c.textContent))
+
+test('files panel is hidden without files', () => assert.equal(panel(run([]).box).hidden, true))
+test('files panel shows HEAD, index and working tree', () => {
+  const { box } = run(['echo a > f', 'git add f', 'echo b >> f'])
+  assert.equal(panel(box).hidden, false)
+  assert.deepEqual(rows(box), [['f', '–', blobId(['a']), blobId(['a', 'b'])]])
+  const cells = [...panel(box).querySelectorAll('tbody td')]
+  assert.deepEqual(cells.map(c => c.classList.contains('changed')), [false, true, true])
+  assert.equal(cells[2].title, 'a\nb')
+})
+test('files panel has a caption and column headers', () => {
+  const { box } = run(['echo a > f'])
+  assert.equal(panel(box).querySelector('caption').textContent, 'Files: HEAD, index and working tree')
+  assert.deepEqual([...panel(box).querySelectorAll('thead th')].map(t => t.textContent), ['File', 'HEAD', 'Index', 'Working tree'])
+})
+test('files panel follows commits', () => assert.deepEqual(rows(run(['echo a > f', 'git add f', 'git commit']).box), [['f', blobId(['a']), blobId(['a']), blobId(['a'])]]))

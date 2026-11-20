@@ -84,6 +84,13 @@ export class Sandbox {
     this.hv.render(playground)
     this.hv.svg.attr('role', 'img').attr('aria-label', tr('graph'))
     this.playground = playground
+
+    // files panel below the graph area
+    this.filesPanel = document.createElement('table')
+    this.filesPanel.className = 'explaingit-files'
+    area.insertAdjacentElement('afterend', this.filesPanel)
+    this.hv.filesPanel = this.filesPanel
+    this.hv.renderFiles()
   }
 
   run(cmd, who) {
@@ -97,6 +104,7 @@ export class Sandbox {
       if (this.ov) this.ov.destroy()
     } catch (e) {}
     this.playground.remove()
+    this.filesPanel.remove()
   }
 }
 

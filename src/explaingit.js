@@ -1,7 +1,7 @@
 import * as d3selection from 'd3-selection'
 import 'd3-transition'
 import { tr, fill } from './i18n.js'
-import { sameLines, formatDiff, changedPaths, diffStat } from './files.js'
+import { sameLines, formatDiff, changedPaths, diffStat, blobId } from './files.js'
 
 // id of the pseudo commit before the first one; contains a space, so no command can name it
 export const ROOT = 'initial commit'
@@ -2233,6 +2233,60 @@ function historyViewFactory(d3) {
             if (this.svg) {
                 this.svg.select('text.status-display').text(tr('status_' + this.status));
             }
+            this.renderFiles();
+        },
+
+        // table under the graph: each file in HEAD, index and working tree (blob ids, content as tooltip)
+        renderFiles: function () {
+            var table = this.filesPanel;
+            if (!table) {
+                return;
+            }
+            table.hidden = !this.hasFiles();
+            if (table.hidden) {
+                return;
+            }
+            var head = this.headTree(), index = this.index, work = this.work,
+                cell = function (row, lines, before, compare) {
+                    var td = row.insertCell();
+                    td.className = 'notranslate';
+                    td.setAttribute('translate', 'no');
+                    if (lines && !Array.isArray(lines)) {
+                        td.textContent = tr('conflictCell');
+                        td.classList.add('conflict');
+                        return;
+                    }
+                    td.textContent = lines ? blobId(lines) : '–';
+                    if (lines) {
+                        td.title = lines.join('\n');
+                    }
+                    if (compare && !sameLines(lines, before)) {
+                        td.classList.add('changed');
+                    }
+                };
+
+            table.innerHTML = '';
+            table.createCaption().textContent = tr('filesCaption');
+            var headRow = table.createTHead().insertRow();
+            [tr('fileColumn'), 'HEAD', tr('indexColumn'), tr('workColumn')].forEach(function (label) {
+                var th = document.createElement('th');
+                th.scope = 'col';
+                th.textContent = label;
+                headRow.appendChild(th);
+            });
+            var body = table.createTBody();
+            allPaths(head, index, work).forEach(function (p) {
+                var row = body.insertRow(),
+                    th = document.createElement('th');
+                th.scope = 'row';
+                th.className = 'notranslate';
+                th.setAttribute('translate', 'no');
+                th.textContent = p;
+                row.appendChild(th);
+                cell(row, head[p], null, false);
+                cell(row, index[p], head[p], true);
+                cell(row, work[p], Array.isArray(index[p]) ? index[p] : undefined, true);
+            });
         },
 
         headTree: function () {

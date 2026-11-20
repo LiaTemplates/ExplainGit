@@ -315,3 +315,36 @@
     font-weight: normal;
     text-transform: none;
 }
+
+/* files: HEAD, index, working tree */
+.explaingit-files {
+    margin: 0.5rem 0;
+    border-collapse: collapse;
+    font-size: 0.85em;
+}
+
+.explaingit-files caption {
+    text-align: left;
+    font-weight: bold;
+    padding-bottom: 0.25rem;
+}
+
+.explaingit-files th,
+.explaingit-files td {
+    border: 1px solid rgba(128, 128, 128, 0.5);
+    padding: 0.15rem 0.6rem;
+    text-align: left;
+}
+
+.explaingit-files td {
+    font-family: "Courier New", monospace;
+}
+
+.explaingit-files td.changed {
+    background-color: rgba(255, 204, 0, 0.3);
+}
+
+.explaingit-files td.conflict {
+    background-color: rgba(255, 0, 0, 0.25);
+    font-weight: bold;
+}

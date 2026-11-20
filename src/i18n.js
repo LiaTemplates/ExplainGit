@@ -125,6 +125,11 @@ const TEXT = {
     removing: f => `Removing ${f}`,
     requireForce: 'clean.requireForce is set: use -n to see or -f to delete.',
     statSummary: (n, plus, minus) => [`${n} file${n == 1 ? '' : 's'} changed`].concat(plus > 0 ? [`${plus} insertion${plus == 1 ? '' : 's'}(+)`] : [], minus > 0 ? [`${minus} deletion${minus == 1 ? '' : 's'}(-)`] : []).join(', '),
+    filesCaption: 'Files: HEAD, index and working tree',
+    fileColumn: 'File',
+    indexColumn: 'Index',
+    workColumn: 'Working tree',
+    conflictCell: 'conflict',
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -246,6 +251,11 @@ const TEXT = {
     removing: f => `Lösche ${f}`,
     requireForce: 'clean.requireForce ist gesetzt: mit -n ansehen oder mit -f löschen.',
     statSummary: (n, plus, minus) => [`${n} Datei${n == 1 ? '' : 'en'} geändert`].concat(plus > 0 ? [`${plus} Einfügung${plus == 1 ? '' : 'en'}(+)`] : [], minus > 0 ? [`${minus} Löschung${minus == 1 ? '' : 'en'}(-)`] : []).join(', '),
+    filesCaption: 'Dateien: HEAD, Index und Arbeitsverzeichnis',
+    fileColumn: 'Datei',
+    indexColumn: 'Index',
+    workColumn: 'Arbeitsverzeichnis',
+    conflictCell: 'Konflikt',
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -367,6 +377,11 @@ const TEXT = {
     removing: f => `Видалення ${f}`,
     requireForce: 'Встановлено clean.requireForce: використайте -n, щоб переглянути, або -f, щоб видалити.',
     statSummary: (n, plus, minus) => [`Змінено файлів: ${n}`].concat(plus > 0 ? [`додано рядків: ${plus}(+)`] : [], minus > 0 ? [`видалено рядків: ${minus}(-)`] : []).join(', '),
+    filesCaption: 'Файли: HEAD, індекс і робочий каталог',
+    fileColumn: 'Файл',
+    indexColumn: 'Індекс',
+    workColumn: 'Робочий каталог',
+    conflictCell: 'конфлікт',
     upToDate: 'Уже актуально.'
   }
 }

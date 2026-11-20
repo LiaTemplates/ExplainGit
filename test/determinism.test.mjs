@@ -21,6 +21,7 @@ export const SCRIPTS = [
   { name: 'diff and show', cmds: ['echo a > f', 'git add f', 'git commit', 'echo b >> f', 'git diff', 'git diff --stat', 'git show'] },
   { name: 'conflict', cmds: ['echo a > f', 'git add f', 'git commit', 'git switch -c dev', 'echo dev > f', 'git commit -am dev', 'git switch master', 'echo m > f', 'git commit -am m', 'git merge dev', 'git checkout --theirs f', 'git add f', 'git commit -m merged'] },
   { name: 'rebase with conflict', cmds: ['echo 1 > f', 'git add f', 'git commit', 'git switch -c t', 'echo T > f', 'git commit -am t', 'echo b > b', 'git add b', 'git commit -m b', 'git switch master', 'echo M > f', 'git commit -am m', 'git switch t', 'git rebase master', 'echo TM > f', 'git add f', 'git rebase --continue', 'git cherry-pick master', 'git revert HEAD'] },
+  { name: 'stash with files', cmds: ['echo a > f', 'git add f', 'git commit', 'echo b >> f', 'echo u > u', 'git stash -u', 'git stash list', 'git stash pop', 'git add f', 'git stash --keep-index', 'git stash apply --index'] },
 ]
 
 for (const { name, cmds, opts } of SCRIPTS)

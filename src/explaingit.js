@@ -1020,16 +1020,26 @@ function controlBoxFactory() {
         stash: function (args) {
             var hv = this.historyView,
                 action = args[0] && args[0].charAt(0) !== '-' ? args[0] : 'push',
-                ref = args[1] || 'stash@{0}',
+                ref = args.slice(1).filter(function (a) { return a.charAt(0) !== '-'; })[0] || 'stash@{0}',
                 index = Number((/^stash@\{(\d+)\}$/.exec(ref) || [])[1]);
 
             if (action === 'push' || action === 'save') {
-                if (hv.status === 'clean') {
+                var opt = {
+                    untracked: args.indexOf('-u') > -1 || args.indexOf('--include-untracked') > -1,
+                    keepIndex: args.indexOf('--keep-index') > -1 || args.indexOf('-k') > -1
+                };
+                var changes = hv.hasFiles()
+                    ? hv.fileStatus().some(function (f) { return f.x !== '?' || opt.untracked; })
+                    : hv.status !== 'clean';
+                if (!changes) {
                     return this.info(tr('noLocalChanges'));
                 }
                 var m = args.indexOf('-m') > -1 ? args.indexOf('-m') : args.indexOf('--message');
-                hv.stashPush(m > -1 ? takeMessage(args.slice(m + 1), []) : null);
+                hv.stashPush(m > -1 ? takeMessage(args.slice(m + 1), []) : null, opt);
                 return this.info(tr('stashSaved', 0));
+            }
+            if (action === 'branch') {
+                return hv.stashBranch(args[1], args[2] || 'stash@{0}', this);
             }
             if (action === 'list') {
                 for (var i = 0; i < hv.stashes.length; i++) {
@@ -1044,7 +1054,16 @@ function controlBoxFactory() {
                 throw new Error(tr('noRef', ref));
             }
             if (action === 'apply' || action === 'pop') {
-                hv.setStatus('unstaged');
+                if (hv.hasFiles()) {
+                    var result = hv.stashApply(index, args.indexOf('--index') > -1),
+                        control = this;
+                    if (result.conflicts.length) {
+                        // like git: a stash that did not apply cleanly is kept
+                        return result.conflicts.forEach(function (p) { control.info(tr('conflictIn', p)); });
+                    }
+                } else {
+                    hv.setStatus('unstaged');
+                }
             }
             if (action === 'drop' || action === 'pop') {
                 hv.stashDrop(index);
@@ -2740,8 +2759,14 @@ function historyViewFactory(d3) {
         },
 
         // a stash is a commit on top of HEAD that no branch points to, named stash@{n}
-        stashPush: function (text) {
+        // the stash commit keeps the working tree (tree) and the index (indexTree);
+        // -u also takes untracked files, --keep-index leaves the index as it is
+        stashPush: function (text, opt) {
+            opt = opt || {};
             var where = this.currentBranch || this.getCommit('HEAD').id,
+                head = this.headTree(),
+                untracked = this.untracked(),
+                tree = {}, view = this,
                 commit = {
                 id: this.nextId(),
                 parent: this.getCommit('HEAD').id,
@@ -2750,12 +2775,66 @@ function historyViewFactory(d3) {
                 tags: [],
                 stash: true
             };
+            if (this.hasFiles()) {
+                allPaths(head, this.index).forEach(function (p) { setPath(tree, p, view.work[p]); });
+                if (opt.untracked) {
+                    untracked.forEach(function (p) { tree[p] = untracked.files[p]; });
+                }
+                commit.tree = tree;
+                commit.indexTree = clone(this.index);
+                commit.untracked = opt.untracked ? untracked.slice() : [];
+                var keep = opt.keepIndex ? this.index : head;
+                this.index = clone(keep);
+                this.work = clone(keep);
+                if (!opt.untracked) {
+                    untracked.forEach(function (p) {
+                        if (!keep[p]) {
+                            view.work[p] = untracked.files[p];
+                        }
+                    });
+                }
+            }
             this.commitData.push(commit);
             this.stashes.unshift(commit.id);
             this._numberStashes();
             this.setStatus('clean');
             this.squashPending = null;
             this.renderCommits();
+        },
+
+        // three-way: the change from the stash base to the stashed working tree onto HEAD
+        stashApply: function (index, withIndex) {
+            var stash = this.getCommit(this.stashes[index]),
+                base = this.getCommit(stash.parent).tree || {},
+                head = this.headTree(),
+                result = this._threeWay(base, stash.tree, 'stash@{' + index + '}'),
+                view = this;
+            if (!result.conflicts.length) {
+                // the changes come back unstaged; new files stay added, untracked ones untracked
+                allPaths(base, stash.tree).forEach(function (p) {
+                    if (withIndex && !sameLines(stash.indexTree[p], base[p])) {
+                        setPath(view.index, p, stash.indexTree[p]);
+                    } else if (head[p] || stash.untracked.indexOf(p) > -1) {
+                        setPath(view.index, p, head[p]);
+                    }
+                });
+            }
+            return result;
+        },
+
+        // stash branch <name>: a new branch at the commit the stash was made on, then pop
+        stashBranch: function (name, ref, control) {
+            var index = Number((/^stash@\{(\d+)\}$/.exec(ref) || [])[1]);
+            if (!name) {
+                throw new Error(tr('needBranchName'));
+            }
+            if (isNaN(index) || index >= this.stashes.length) {
+                throw new Error(this.stashes.length ? tr('noRef', ref) : tr('noStash'));
+            }
+            control._changeBranch(name, { create: true, start: this.getCommit(this.stashes[index]).parent });
+            if (!this.stashApply(index, true).conflicts.length) {
+                this.stashDrop(index);
+            }
         },
 
         stashDrop: function (index) {

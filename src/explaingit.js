@@ -2592,7 +2592,8 @@ function historyViewFactory(d3) {
 
         this.isRemote = typeof config.remoteName === 'string';
         this.remoteName = config.remoteName;
-        this.remotes = config.remotes || ['origin'];
+        // remotes this repository knows; a repository of the world knows none at first
+        this.remotes = config.remotes || (this.isRemote ? [] : ['origin']);
         this._legacyStatus = 'clean'; // working tree without files (0.2.0): clean, staged or unstaged
         this.index = {};                // files of the active worktree: path -> lines
         this.work = {};
@@ -3942,7 +3943,7 @@ function historyViewFactory(d3) {
 
         // remote tracking branches look like <remote>/<branch>; feature/login is local
         isRemoteRef: function (name) {
-            return !this.isRemote && this.remotes.some(function (r) { return name.indexOf(r + '/') === 0; });
+            return this.remotes.some(function (r) { return name.indexOf(r + '/') === 0; });
         },
 
         // from the commits, not from this.branches: that list is filled only when tags are drawn

@@ -1,7 +1,7 @@
 <!--
 author:   Yannik Höll
 email:    labruzzler@gmail.com
-version:  0.3.0
+version:  0.4.0
 edit:     true
 language: en
 narrator: US English Female
@@ -61,7 +61,7 @@ the right state, and let a whole classroom work on one repository together.
 
 Import the template into your course (pinned version or latest):
 
-`import: https://raw.githubusercontent.com/LiaTemplates/ExplainGit/0.3.0/README.md`
+`import: https://raw.githubusercontent.com/LiaTemplates/ExplainGit/0.4.0/README.md`
 
 `import: https://raw.githubusercontent.com/LiaTemplates/ExplainGit/master/README.md`
 
@@ -237,6 +237,76 @@ git commit -m merged
 ```
 
 
+## History
+
+`git log` lists commits and marks them in the graph until the next command.
+It knows `--oneline`, `--graph`, `--all`, `-<n>`, `--merges`, `--no-merges`,
+`--first-parent`, `-p`, `--stat`, `-S <text>`, `-- <file>` and ranges:
+`main..dev` (what `dev` has and `main` has not), `^main dev`, `dev --not main`
+and `main...dev --left-right` (what only one side has). Revisions like
+`HEAD~2`, `HEAD^2` (second parent of a merge), `@{u}` (upstream) and
+`HEAD@{3}` (reflog) work everywhere. `git branch -v`, `-vv` (ahead/behind),
+`--merged` and `--no-merged` give an overview.
+
+``` text  @ExplainGit.eval
+git init -b main
+git commit -m one
+git switch -c dev
+git commit -m d1
+git commit -m d2
+git switch main
+git commit -m m1
+git log --oneline --left-right main...dev
+```
+
+Try `git log --oneline main..dev`, `git log --all --oneline` and `git branch -v`.
+
+
+## Reflog and recovery
+
+Every move of `HEAD` and of a branch is written to the reflog: `git reflog`,
+`git reflog show <branch>`, `git log -g`. A commit that no branch reaches any
+more can be saved with `git branch rescue HEAD@{1}`. `git fsck` lists such
+commits once the reflog is gone (`git reflog expire --expire=now --all`), and
+`git gc --prune=now` or `git prune` remove them for good.
+
+``` text  @ExplainGit.eval
+git commit -m a
+git commit -m important
+git reset --hard HEAD~
+git reflog
+```
+
+__Try it:__ The commit `important` was lost by `git reset --hard`. Bring it back
+as branch `rescue` and stay on `master`.
+
+``` text  @ExplainGit.quiz
+git commit -m a
+git commit -m important
+git reset --hard HEAD~
+---
+git branch rescue HEAD@{1}
+```
+
+
+## Tags
+
+`git tag v1` makes a lightweight tag, `git tag -a v1 -m "message"` an annotated
+one (drawn with a thick border, shown by `git show v1`). `git tag -l "v1*"`,
+`git tag -d v1`, `git push origin v1`, `git push --tags`, `git push --follow-tags`
+and `git describe` work as in git. Aliases come from `git config alias.<name>`,
+for example `git config --global alias.last 'log -1 HEAD'`.
+
+``` text  @ExplainGit.eval
+git commit -m a
+git tag -a v1.0 -m "first release"
+git commit -m b
+git commit -m c
+git tag v1.1-rc HEAD~
+git describe
+```
+
+
 ## Modern git
 
 `git switch`, `git restore`, `git stash`, `git cherry-pick`, `git commit --amend`
@@ -329,7 +399,6 @@ never translated.
 | `git switch <b>`, `-c <b> [<start>]`, `-C`, `--detach <ref>`, `git switch -` | |
 | `git checkout <ref>`, `-b <b> [<start>]`, `git checkout -` | a commit id detaches `HEAD` |
 | `git branch <b> [<start>]`, `-d`/`-D`, `-m`/`-M`, `-c`, `-f <b> <ref>`, `-u origin/<b>` | names like `feature/login` work |
-| `git tag <name>` | |
 | `git merge <b>`, `--no-ff`, `--ff-only`, `--squash` | |
 | `git rebase <upstream> [<b>]`, `--onto <base>`, `--update-refs` | |
 | `git cherry-pick <ref>...` | |
@@ -340,18 +409,24 @@ never translated.
 | `git restore [--staged] [--source=<ref>] <path>`, `git checkout [<ref>] -- <path>`, `git clean -n / -f` | |
 | `git merge --abort / --continue`, `git checkout --ours / --theirs <path>` | conflicts |
 | `git rebase / cherry-pick / revert --continue / --skip / --abort` | |
-| `git config <key> [<value>]`, `git config --list` | e.g. `merge.conflictstyle diff3`, `pull.rebase true` |
+| `git config <key> [<value>]`, `git config --list`, `git config alias.<name> '<command>'` | e.g. `merge.conflictstyle diff3`, `pull.rebase true` |
+| `git log [--oneline] [--graph] [--all] [-<n>] [--merges / --no-merges] [--first-parent] [-p] [--stat] [-S <text>] [--left-right] [<range>] [-- <path>]` | marks the listed commits in the graph |
+| `git reflog [show <ref>]`, `git log -g`, `git reflog expire --expire=now --all` | |
+| `git fsck [--no-reflogs] [--unreachable]`, `git gc [--prune=now]`, `git prune` | |
+| `git rev-parse [--abbrev-ref] <rev>`, `git describe [--tags]` | |
+| `git branch [-v / -vv] [-a / -r] [--merged / --no-merged [<rev>]]` | |
+| `git tag [-a] [-m <msg>] <name> [<rev>]`, `git tag -d <name>`, `git tag [-l "<pattern>"]` | |
 | `edit [<file>]` | without files: an abstract change; with a file: one more line |
 | `git stash [push] [-u] [--keep-index] [-m msg]`, `pop`, `apply [--index]`, `drop`, `list`, `branch <b>` | |
 | `git worktree add [-b <b>] [--detach] <path> [<ref>]`, `list`, `remove [--force]` | |
 | `cd <path>`, `git -C <path> <command>` | `.` is the main worktree |
 | `git fetch [--prune]`, `git pull [--rebase / --ff-only]` | needs `create origin` |
-| `git push [-u] [--force-with-lease / -f] [origin <b>]`, `git push origin --delete <b>` | needs `create origin` |
+| `git push [-u] [--force-with-lease / -f] [--tags / --follow-tags] [origin <b or tag>]`, `git push origin --delete <b or tag>` | needs `create origin` |
 | `git init -b <name>` | only as the first line of a code block |
 
-Refs like `HEAD^`, `main~2` or `feature^^` work everywhere. Files are small text
-files without folders. Not included yet: interactive rebase, `bisect`, `blame`,
-reflog, several remotes, `.gitignore`.
+Revisions like `HEAD^`, `main~2`, `HEAD^2`, `@{u}` and `HEAD@{2}` work
+everywhere. Files are small text files without folders. Not included yet:
+interactive rebase, `bisect`, `blame`, several remotes, `.gitignore`.
 
 
 ## Implementation

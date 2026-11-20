@@ -24,6 +24,7 @@ export const SCRIPTS = [
   { name: 'stash with files', cmds: ['echo a > f', 'git add f', 'git commit', 'echo b >> f', 'echo u > u', 'git stash -u', 'git stash list', 'git stash pop', 'git add f', 'git stash --keep-index', 'git stash apply --index'] },
   { name: 'log', cmds: ['git commit -m one', 'git switch -c dev', 'git commit -m d1', 'git switch master', 'git commit -m m1', 'git merge dev', 'git log --oneline --all', 'git log master..dev'] },
   { name: 'reflog', cmds: ['git commit -m a', 'git commit -m lost', 'git reset --hard HEAD~', 'git branch rescue HEAD@{1}', 'git reflog', 'git log -g'] },
+  { name: 'gc', cmds: ['git commit -m a', 'git commit -m lost', 'git reset --hard HEAD~', 'git fsck --no-reflogs', 'git reflog expire --expire=now --all', 'git gc --prune=now'] },
 ]
 
 // graph, file contents, index and working tree; also in another language

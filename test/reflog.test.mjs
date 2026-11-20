@@ -45,3 +45,39 @@ test('each worktree has its own HEAD reflog', () => {
 })
 test('reflog does not change the repository', () => assert.deepEqual(viewInfo(run(['git commit', 'git reflog']).box.hv).refs, viewInfo(run(['git commit']).box.hv).refs))
 test('unknown reflog entry is an error', () => unchanged(['git commit'], 'git branch x HEAD@{9}'))
+
+// --- Task 4: fsck, reflog expire, gc, prune
+const LOST = ['git commit -m a', 'git commit -m lost', 'git reset --hard HEAD~']
+const lostId = r => r.box.hv.reflogFor('HEAD')[1].id
+
+test('fsck: the reflog keeps a commit reachable, --no-reflogs shows it dangling', () => {
+  const r = run(LOST.concat('git fsck'))
+  assert.ok(!r.log.some(l => /^dangling commit/.test(l.text)))
+  const n = run(LOST.concat('git fsck --no-reflogs'))
+  assert.equal(n.log.at(-1).text, 'dangling commit ' + lostId(n))
+})
+test('after reflog expire, fsck finds the dangling commit', () => {
+  const r = run(LOST.concat('git reflog expire --expire=now --all', 'git fsck'))
+  assert.match(r.log.at(-1).text, /^dangling commit [0-9a-f]{7}$/)
+  assert.deepEqual(r.box.hv.reflogFor('HEAD'), [])
+})
+test('gc --prune=now keeps reflog commits, removes them after expire', () => {
+  const kept = run(LOST.concat('git gc --prune=now'))
+  assert.ok(kept.box.hv.getCommit(lostId(kept)))
+  const r = run(LOST)
+  const id = lostId(r)
+  r.box.run('git reflog expire --expire=now --all'); r.box.run('git gc --prune=now')
+  assert.equal(r.box.hv.getCommit(id), null)
+  assert.equal(r.box.hv.svg.selectAll('circle.commit').size(), r.box.hv.commitData.length)
+})
+test('plain gc removes nothing (objects are too young), prune does', () => {
+  const r = run(LOST.concat('git reflog expire --expire=now --all'))
+  const n = r.box.hv.commitData.length
+  r.box.run('git gc'); assert.equal(r.box.hv.commitData.length, n)
+  r.box.run('git prune'); assert.equal(r.box.hv.commitData.length, n - 1)
+})
+test('stash, tags and worktree HEADs stay after gc', () => {
+  const r = run(['git commit -m a', 'edit', 'git stash', 'git commit -m b', 'git tag v1', 'git worktree add --detach ../wt HEAD', 'git reset --hard HEAD~',
+    'git reflog expire --expire=now --all', 'git gc --prune=now'])
+  assert.ok(r.box.hv.getCommit('stash@{0}')); assert.ok(r.box.hv.getCommit('v1'))
+})

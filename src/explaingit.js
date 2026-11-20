@@ -1384,9 +1384,46 @@ function controlBoxFactory() {
             }
         },
 
-        // reflog [show] [<ref>]
-        reflog: function (args) {
+        // fsck [--no-reflogs] [--unreachable] [--lost-found] [--full]: commits no ref reaches
+        fsck: function (args) {
             var hv = this.historyView, control = this,
+                keep = hv.reachable({ reflog: args.indexOf('--no-reflogs') === -1 }),
+                lost = hv.commitData.filter(function (c) { return !keep[c.id]; }),
+                isParent = {};
+            lost.forEach(function (c) {
+                isParent[c.parent] = true;
+                isParent[c.parent2] = true;
+            });
+            lost.forEach(function (c) {
+                if (args.indexOf('--unreachable') > -1) {
+                    control.plain('unreachable commit ' + c.id);
+                } else if (!isParent[c.id]) {
+                    control.plain('dangling commit ' + c.id);
+                }
+            });
+        },
+
+        // gc: objects are young, so only --prune=now removes something
+        gc: function (args) {
+            if (args.indexOf('--prune=now') > -1) {
+                this.historyView.pruneUnreachable();
+            }
+        },
+
+        prune: function () {
+            this.historyView.pruneUnreachable();
+        },
+
+        // reflog [show] [<ref>] | reflog expire --expire=now (--all | <ref>)
+        reflog: function (args) {
+            var hv = this.historyView, control = this;
+            if (args[0] === 'expire') {
+                if (args.indexOf('--expire=now') > -1 || args.indexOf('--expire-unreachable=now') > -1) {
+                    hv.expireReflog(args.indexOf('--all') > -1 ? null : args.slice(1).filter(function (a) { return a.charAt(0) !== '-'; }));
+                }
+                return;
+            }
+            var
                 rest = args[0] === 'show' ? args.slice(1) : args,
                 ref = rest.filter(function (a) { return a.charAt(0) !== '-'; })[0] || 'HEAD';
             if (ref !== 'HEAD' && !hv.reflog[ref]) {
@@ -2388,6 +2425,8 @@ function historyViewFactory(d3) {
                     return d.rebased;
                 });
 
+            existingCircles.exit().remove();
+
             existingCircles.transition()
                 .duration(500)
                 .call(fixCirclePosition);
@@ -2429,6 +2468,7 @@ function historyViewFactory(d3) {
                     return view.name + '-' + d.id + '-to-' + d.parent;
                 });
 
+            existingPointers.exit().remove();
             existingPointers.transition()
                 .duration(500)
                 .call(fixPointerStartPosition, view)
@@ -2467,6 +2507,7 @@ function historyViewFactory(d3) {
                     return view.name + '-' + d.id + '-to-' + d.parent2;
                 });
 
+            existingPointers.exit().remove();
             existingPointers.transition().duration(500)
                 .attr('points', function (d) {
                     var p1 = px1(d, view, 'parent2') + ',' + py1(d, view, 'parent2'),
@@ -2515,6 +2556,7 @@ function historyViewFactory(d3) {
                 .data(this.commitData, function (d) { return d.id; })
                 .text(getText);
 
+            existingTexts.exit().remove();
             existingTexts.transition().call(fixIdPosition, view, delta);
 
             newtexts = existingTexts.enter()
@@ -2869,6 +2911,56 @@ function historyViewFactory(d3) {
                 });
             });
             return { active: this.active, branch: this.currentBranch, head: head && head.id, branches: branches };
+        },
+
+        // ids reachable from refs, every worktree HEAD, stashes, a running operation and
+        // (opt.reflog) every reflog entry
+        reachable: function (opt) {
+            var view = this, seen = {}, todo = [];
+            this.commitData.forEach(function (c) {
+                if (c.tags.length) {
+                    todo.push(c);
+                }
+            });
+            this.worktrees.forEach(function (w, i) { todo.push(view.getCommit(view.worktreeHead(i))); });
+            if (this.operation) {
+                var op = this.operation;
+                todo.push(this.getCommit(op.theirs), op.orig && this.getCommit(op.orig.head), op.current && this.getCommit(op.current.id));
+                (op.todo || []).forEach(function (item) { todo.push(view.getCommit(item.id)); });
+            }
+            if (this.squashPending) {
+                todo.push(this.getCommit(this.squashPending));
+            }
+            if (opt && opt.reflog) {
+                var logs = Object.keys(this.reflog).map(function (r) { return view.reflog[r]; })
+                    .concat(this.worktrees.map(function (w) { return w.reflogHead || []; }));
+                logs.forEach(function (log) {
+                    log.forEach(function (e) { todo.push(view.getCommit(e.id)); });
+                });
+            }
+            while (todo.length) {
+                var c = todo.pop();
+                if (c && c.id !== ROOT && !seen[c.id]) {
+                    seen[c.id] = true;
+                    todo.push(this.getCommit(c.parent), c.parent2 && this.getCommit(c.parent2));
+                }
+            }
+            return seen;
+        },
+
+        pruneUnreachable: function () {
+            var keep = this.reachable({ reflog: true });
+            this.commitData = this.commitData.filter(function (c) { return keep[c.id]; });
+            this.renderCommits();
+        },
+
+        // refs: null for all reflogs (also those of other worktrees)
+        expireReflog: function (refs) {
+            var view = this;
+            (refs || Object.keys(this.reflog)).forEach(function (r) { view.reflog[r] = []; });
+            if (!refs) {
+                this.worktrees.forEach(function (w) { w.reflogHead = []; });
+            }
         },
 
         addReflog: function (ref, id, msg) {

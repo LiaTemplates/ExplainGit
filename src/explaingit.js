@@ -1344,6 +1344,7 @@ function controlBoxFactory() {
                     parent: fetchCommit.parent,
                     parent2: fetchCommit.parent2,
                     message: fetchCommit.message,
+                    tree: clone(fetchCommit.tree),
                     tags: []
                 });
             }
@@ -1493,6 +1494,7 @@ function controlBoxFactory() {
                                 parent: commit.parent,
                                 parent2: commit.parent2,
                                 message: commit.message,
+                                tree: clone(commit.tree),
                                 tags: []
                             });
                             if (typeof commit.parent2 === 'string') {

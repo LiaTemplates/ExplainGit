@@ -3,6 +3,7 @@
 import { select } from 'd3-selection'
 import { ControlBox, HistoryView, ROOT } from './explaingit.js'
 import { tr } from './i18n.js'
+import { blobId } from './files.js'
 
 // --- commands ----------------------------------------------------------------
 
@@ -140,7 +141,10 @@ export function viewInfo(hv) {
 // Numbers the commits reachable from the given start points in a fixed order.
 // Two repositories give the same encoding exactly when their graphs (parent
 // order included) and their refs are the same, whatever the commit ids are.
-export function encode(starts) {
+// with trees, the content of every commit counts too (blob ids of its files)
+const treeKey = tree => Object.keys(tree || {}).sort().map(p => p + ':' + blobId(tree[p])).join(',')
+
+export function encode(starts, withTrees) {
   const num = new Map()
   const nodes = []
   const visit = (id, byId) => {
@@ -151,6 +155,7 @@ export function encode(starts) {
     const c = byId[id]
     // where a commit was copied from counts too: cherry-pick, squash and revert differ from a plain commit
     nodes[n] = [c.parent, c.parent2, c.cherryPickedFrom, c.squashOf, c.reverts].map(id => visit(id, byId))
+    if (withTrees) nodes[n].push(treeKey(c.tree))
     return n
   }
   const marks = starts.map(([label, id, byId]) => [label, visit(id, byId)])
@@ -172,7 +177,19 @@ export function needsStatus(cmds) {
     /--(soft|mixed|hard|squash)\b/.test(c))
 }
 
-export function compare(actual, expected, { status = true } = {}) {
+// quizzes that change files: compare contents too
+export function needsFiles(cmds) {
+  return cmds.some(c =>
+    /^(echo|cat|rm|mv|edit)\b/.test(c) ||
+    /^git (-C \S+ )?(add|rm|mv|restore|diff|show|clean|stash)\b/.test(c) ||
+    /^git (-C \S+ )?checkout\b.* --( |$)/.test(c))
+}
+
+// an index that is still being merged: compare its parts
+const plainTree = t => JSON.stringify(Object.keys(t).sort().map(p => [p, Array.isArray(t[p]) ? blobId(t[p]) : t[p]]))
+
+export function compare(actual, expected, { status = true, files = false } = {}) {
+  const enc = starts => encode(starts, files)
   const problems = []
   // start points for the whole graph: the refs of the solution, then the HEAD of every worktree
   const starts = views =>
@@ -191,8 +208,8 @@ export function compare(actual, expected, { status = true } = {}) {
     for (const name of Object.keys(exp.refs).sort()) {
       if (!(name in act.refs)) problems.push(say(tr('missing', refLabel(name))))
       else if (
-        encode([[name, act.refs[name], act.byId]]) !==
-        encode([[name, exp.refs[name], exp.byId]])
+        enc([[name, act.refs[name], act.byId]]) !==
+        enc([[name, exp.refs[name], exp.byId]])
       )
         problems.push(say(tr('wrongRef', refLabel(name))))
     }
@@ -205,6 +222,10 @@ export function compare(actual, expected, { status = true } = {}) {
   if (problems.length) return problems
 
   if (status && actual[0][1].status !== expected[0][1].status) return [tr('wrongStatus')]
+  if (files) {
+    const fa = actual[0][1].files, fe = expected[0][1].files
+    if (plainTree(fa.index) !== plainTree(fe.index) || plainTree(fa.work) !== plainTree(fe.work)) return [tr('wrongFiles')]
+  }
 
   // every worktree by path: its branch and where its HEAD is ('.' is the main one)
   const a = actual[0][1], e = expected[0][1]
@@ -213,13 +234,13 @@ export function compare(actual, expected, { status = true } = {}) {
   for (const [path, w] of we) {
     const got = wa.get(path)
     if (!got) problems.push(tr('worktreeMissing', path))
-    else if (got[1] !== w[1] || encode([['wt', got[2], a.byId]]) !== encode([['wt', w[2], e.byId]]))
+    else if (got[1] !== w[1] || enc([['wt', got[2], a.byId]]) !== enc([['wt', w[2], e.byId]]))
       problems.push(path === '.' ? tr('head') : tr('worktreeWrong', path))
   }
   for (const path of wa.keys()) if (!we.has(path)) problems.push(tr('worktreeExtra', path))
   if (problems.length) return problems
 
-  if (encode(starts(actual)) !== encode(starts(expected))) problems.push(tr('shape'))
+  if (enc(starts(actual)) !== enc(starts(expected))) problems.push(tr('shape'))
   return problems
 }
 

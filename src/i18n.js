@@ -140,6 +140,7 @@ const TEXT = {
     dirtyRebase: 'Cannot rebase: you have changes. Commit or stash them first.',
     stoppedAt: (id, m) => `Could not apply ${id}... ${m}`,
     resolveHint: t => `Resolve the conflicts, mark them with git add, then run git ${t} --continue (or --skip, --abort).`,
+    wrongFiles: 'The files are not in the right state yet.',
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -276,6 +277,7 @@ const TEXT = {
     dirtyRebase: 'Rebase nicht möglich: Es gibt Änderungen. Erst committen oder stashen.',
     stoppedAt: (id, m) => `Konnte ${id}... ${m} nicht anwenden`,
     resolveHint: t => `Konflikte lösen, mit git add markieren, dann git ${t} --continue (oder --skip, --abort).`,
+    wrongFiles: 'Die Dateien sind noch nicht im richtigen Zustand.',
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -412,6 +414,7 @@ const TEXT = {
     dirtyRebase: 'Неможливо виконати rebase: є зміни. Спершу закомітьте або сховайте (stash) їх.',
     stoppedAt: (id, m) => `Не вдалося застосувати ${id}... ${m}`,
     resolveHint: t => `Розв’яжіть конфлікти, позначте їх через git add, потім git ${t} --continue (або --skip, --abort).`,
+    wrongFiles: 'Файли ще не в потрібному стані.',
     upToDate: 'Уже актуально.'
   }
 }

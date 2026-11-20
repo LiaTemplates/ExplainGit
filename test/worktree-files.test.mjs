@@ -125,3 +125,33 @@ test('files panel has a caption and column headers', () => {
   assert.deepEqual([...panel(box).querySelectorAll('thead th')].map(t => t.textContent), ['File', 'HEAD', 'Index', 'Working tree'])
 })
 test('files panel follows commits', () => assert.deepEqual(rows(run(['echo a > f', 'git add f', 'git commit']).box), [['f', blobId(['a']), blobId(['a']), blobId(['a'])]]))
+
+// --- Task 9: remotes, worktrees, quiz
+import { compare } from './harness.mjs'
+import * as repo from '../src/repo.js'
+const quiz = (learner, solution, opts) => compare(run(learner, opts).state, run(solution, opts).state,
+  { status: repo.needsStatus(solution), files: repo.needsFiles(solution) })
+const S = ['echo a > f', 'git add f', 'git commit']
+
+test('needsFiles knows file commands', () => {
+  assert.equal(repo.needsFiles(['git commit', 'git switch -c x']), false)
+  for (const c of ['echo a > f', 'cat f', 'git add f', 'git diff', 'git restore f', 'git checkout -- f', 'git -C ../wt add f'])
+    assert.equal(repo.needsFiles([c]), true, c)
+})
+test('quiz checks file contents', () => {
+  const solution = S.concat('echo b >> f', 'git commit -am b')
+  assert.deepEqual(quiz(S.concat('echo b >> f', 'git add f', 'git commit -m other'), solution), [])
+  assert.notDeepEqual(quiz(S.concat('echo c >> f', 'git commit -am b'), solution), [])
+})
+test('quiz checks the working tree', () => assert.notDeepEqual(quiz(S.concat('echo b >> f', 'git commit -am b', 'echo junk > j'), S.concat('echo b >> f', 'git commit -am b')), []))
+test('old quizzes without file commands ignore files', () => assert.deepEqual(quiz(['git commit', 'git commit'], ['git commit', 'git commit']), []))
+test('push and fetch carry the files', () => {
+  const r = run(S.concat('git push'), { origin: true })
+  assert.deepEqual(r.box.ov.getCommit('master').tree, { f: ['a'] })
+  const p = run(S.concat('git push', 'echo b >> f', 'git commit -am b', 'git push', 'git reset --hard HEAD~', 'git pull'), { origin: true })
+  assert.deepEqual(p.box.hv.work.f, ['a', 'b'])
+})
+test('each worktree has its own index and working tree', () => {
+  const r = run(S.concat('git worktree add -b dev ../wt', 'echo main >> f', 'cd ../wt', 'echo wt > w'))
+  assert.deepEqual(r.box.hv.work, { f: ['a'], w: ['wt'] }); r.box.run('cd .'); assert.deepEqual(r.box.hv.work, { f: ['a', 'main'] })
+})

@@ -1688,9 +1688,139 @@ function controlBoxFactory() {
 
         // gc: objects are young, so only --prune=now removes something
         gc: function (args) {
+            var hv = this.historyView;
             if (args.indexOf('--prune=now') > -1) {
-                this.historyView.pruneUnreachable();
+                hv.pruneUnreachable();
             }
+            // reachable objects (also from reflogs and the index) go into the pack, the rest stays loose
+            hv.packed = hv.objectSizes(hv.reachable({ reflog: true }));
+        },
+
+        // count-objects [-v]
+        'count-objects': function (args) {
+            var hv = this.historyView, control = this, all = hv.objectSizes(),
+                loose = Object.keys(all).filter(function (id) { return !(id in hv.packed); }),
+                packed = Object.keys(all).filter(function (id) { return id in hv.packed; }),
+                kb = function (ids) { return Math.ceil(ids.reduce(function (n, id) { return n + all[id]; }, 0) / 1024); };
+            if (args.indexOf('-v') === -1) {
+                return this.plain(loose.length + ' objects, ' + kb(loose) + ' kilobytes');
+            }
+            [['count', loose.length], ['size', kb(loose)], ['in-pack', packed.length], ['packs', packed.length ? 1 : 0],
+                ['size-pack', kb(packed)], ['prune-packable', 0], ['garbage', 0], ['size-garbage', 0]].forEach(function (e) {
+                control.plain(e[0] + ': ' + e[1]);
+            });
+        },
+
+        'write-tree': function () {
+            var hv = this.historyView;
+            if (hv.hasUnmerged()) {
+                throw new Error(tr('unmergedFiles'));
+            }
+            this.plain(hv.storeObject('tree', hv.index));
+        },
+
+        // commit-tree <tree> [-p <parent>]... -m <message>: a commit, no ref moves
+        'commit-tree': function (args) {
+            var hv = this.historyView, parents = [], message, name;
+            args = args.slice();
+            while (args.length) {
+                var a = args.shift();
+                if (a === '-p') {
+                    var p = hv.getCommit(args.shift());
+                    if (!p || p.id === ROOT) {
+                        throw new Error(tr('noRef', a));
+                    }
+                    parents.push(p.id);
+                } else if (a === '-m') {
+                    message = takeMessage(args, ['-p']);
+                } else if (!name) {
+                    name = a;
+                }
+            }
+            var obj = hv.findObject(name);
+            if (obj && obj.type === 'commit') {
+                obj = { type: 'tree', data: obj.data.tree || {} };
+            }
+            if (!obj || obj.type !== 'tree') {
+                throw new Error(tr('notTree', name || ''));
+            }
+            if (!message || parents.length > 2) {
+                throw new Error(tr('commitTreeUsage'));
+            }
+            var commit = { id: hv.nextId(), parent: parents[0] || ROOT, message: message, tree: clone(obj.data), tags: [],
+                author: hv.authorName || hv.config['user.name'] || (hv.isRemote ? hv.remoteName : 'you') };
+            if (parents[1]) {
+                commit.parent2 = parents[1];
+            }
+            hv.commitData.push(commit);
+            hv.renderCommits();
+            this.plain(commit.id);
+        },
+
+        // refs/heads/<b>, refs/tags/<t>, refs/remotes/<r>/<b> -> the name ExplainGit uses
+        _refName: function (ref) {
+            var m = /^refs\/(heads|tags|remotes)\/(.+)$/.exec(ref || '');
+            if (!m) {
+                throw new Error(tr('badRefName', ref || ''));
+            }
+            return m[1] === 'tags' ? '[' + m[2] + ']' : m[2];
+        },
+
+        // update-ref <ref> <rev> | update-ref -d <ref>: move a ref, nothing else changes
+        'update-ref': function (args) {
+            var hv = this.historyView, del = args.indexOf('-d') > -1,
+                pos = args.filter(function (a) { return a.charAt(0) !== '-'; }),
+                name = this._refName(pos[0]);
+            if (del) {
+                if (!hv.getCommit(name) || name === hv.currentBranch) {
+                    throw new Error(tr(name === hv.currentBranch ? 'deleteCurrent' : 'noRef', pos[0]));
+                }
+                hv._removeTag(name);
+                return hv.renderTags();
+            }
+            var target = hv.getCommit(pos[1]);
+            if (!target || target.id === ROOT) {
+                throw new Error(tr('noRef', pos[1] || ''));
+            }
+            hv.moveTag(name, target.id);
+            if (name === hv.currentBranch) {
+                hv.checkout(name);
+            }
+            hv.renderCommits();
+        },
+
+        // symbolic-ref HEAD [refs/heads/<b>]: which branch HEAD names; index and files stay
+        'symbolic-ref': function (args) {
+            var hv = this.historyView;
+            if (args[0] !== 'HEAD') {
+                throw new Error(tr('symbolicRefUsage'));
+            }
+            if (!args[1]) {
+                if (!hv.currentBranch) {
+                    throw new Error(tr('notSymbolic'));
+                }
+                return this.plain('refs/heads/' + hv.currentBranch);
+            }
+            var b = /^refs\/heads\/(.+)$/.exec(args[1]);
+            if (!b || !hv.isLocalBranch(b[1])) {
+                throw new Error(tr('noRef', args[1]));
+            }
+            hv.checkFree(b[1]);
+            hv.checkout(b[1]);
+        },
+
+        'show-ref': function () {
+            var hv = this.historyView, control = this, refs = [];
+            hv.commitData.forEach(function (c) {
+                c.tags.forEach(function (t) {
+                    if (t === 'HEAD' || t.indexOf('stash@{') === 0) {
+                        return;
+                    }
+                    var name = /^\[.*\]$/.test(t) ? 'refs/tags/' + t.slice(1, -1) : hv.isRemoteRef(t) ? 'refs/remotes/' + t : 'refs/heads/' + t;
+                    refs.push([name, c.id]);
+                });
+            });
+            refs.sort(function (a, b) { return a[0] < b[0] ? -1 : 1; }).forEach(function (r) { control.plain(r[1] + ' ' + r[0]); });
         },
 
         prune: function () {
@@ -3035,6 +3165,7 @@ function historyViewFactory(d3) {
         this.operation = null;  // merge/cherry-pick/revert/rebase that stopped at a conflict
         this.bisectState = null; // git bisect: {orig, bad, good, skip, log}
         this.objects = Object.create(null); // blobs and trees written by hash-object -w / write-tree
+        this.packed = Object.create(null);  // ids git gc put into the pack
         this.upstream = Object.create(null); // branch -> remote tracking branch, set by push -u / branch -u
         // worktrees: the active one lives in currentBranch, HEAD and status
         this.worktrees = [{ path: '.', branch: this.currentBranch, head: null, status: 'clean' }];
@@ -4171,6 +4302,34 @@ function historyViewFactory(d3) {
                 });
             });
             return found;
+        },
+
+        // every object git would have: id -> size (commits, their trees and blobs, the index, written objects)
+        objectSizes: function (ids) {
+            var view = this, all = {},
+                tree = function (t) {
+                    all[treeId(t)] = treeEntries(t).join('\n').length;
+                    Object.keys(t).forEach(function (p) {
+                        if (Array.isArray(t[p])) {
+                            all[blobId(t[p])] = t[p].join('\n').length;
+                        }
+                    });
+                };
+            this.commitData.forEach(function (c) {
+                if (c.id !== ROOT && (!ids || ids[c.id])) {
+                    all[c.id] = 60 + (c.message || '').length;
+                    tree(c.tree || {});
+                }
+            });
+            if (!ids) {
+                tree(this.index);
+                Object.keys(this.objects).forEach(function (id) {
+                    all[id] = view.objects[id].type === 'tree' ? treeEntries(view.objects[id].data).join('\n').length : view.objects[id].data.join('\n').length;
+                });
+            } else {
+                tree(this.index);
+            }
+            return all;
         },
 
         storeObject: function (type, data) {

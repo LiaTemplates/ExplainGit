@@ -29,7 +29,7 @@ test('HEAD@{1} rescues a commit lost by reset --hard', () => {
 })
 test('log -g walks the reflog', () => {
   const { lines } = out(['git commit -m a', 'git commit -m b', 'git log -g -1'])
-  assert.deepEqual(lines.slice(1, 4), ['Reflog: HEAD@{0}', 'Reflog message: commit: b', '    b'])
+  assert.deepEqual(lines.slice(1, 5), ['Reflog: HEAD@{0}', 'Reflog message: commit: b', 'Author: you', '    b'])
 })
 test('reflog after a rebase with a conflict', () => {
   const T = ['echo 1 > f', 'git add f', 'git commit -m base', 'git switch -c t', 'echo T > f', 'git commit -am t', 'git switch master', 'echo M > f', 'git commit -am m', 'git switch t',

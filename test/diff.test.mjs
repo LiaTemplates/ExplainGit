@@ -33,7 +33,8 @@ test('git diff -- path', () => assert.deepEqual(out(A.concat('echo b >> f', 'ech
 test('git show prints the commit and its diff', () => {
   const lines = out(A.concat('echo b >> f', 'git commit -am two', 'git show'))
   assert.match(lines[0], /^commit [0-9a-f]{7}$/)
-  assert.equal(lines[1], '    two')
+  assert.equal(lines[1], 'Author: you')
+  assert.equal(lines[2], '    two')
   assert.deepEqual(lines.slice(-2), [' a', '+b'])
 })
 test('git show of the first commit shows new files', () => assert.deepEqual(out(A.concat('git show HEAD')).slice(-3), ['+++ b/f', '@@ -0,0 +1,1 @@', '+a']))

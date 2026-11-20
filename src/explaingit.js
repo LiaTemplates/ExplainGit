@@ -176,7 +176,8 @@ function controlBoxFactory() {
             } while (args.length && !(words[words.length - 1].length > 1 && words[words.length - 1].slice(-1) === quote));
             return words.join(' ').slice(1, -1);
         }
-        while (args.length && flags.indexOf(args[0]) === -1) {
+        // an unquoted message ends at the next flag (also --author=…)
+        while (args.length && flags.indexOf(args[0]) === -1 && !/^--[a-z-]+=/.test(args[0])) {
             words.push(args.shift());
         }
         return words.join(' ');
@@ -309,6 +310,37 @@ function controlBoxFactory() {
 
             this._scrollToBottom();
 
+            // @<repo> <command>: run it in another repository of the world (a colleague, the server)
+            var home = { historyView: this.historyView, remotes: this.remotes, urls: this.urls, originView: this.originView },
+                at = /^@(\S*)\s*(.*)$/.exec(entry);
+            try {
+                if (at) {
+                    var view = this.world[at[1]];
+                    if (!view) {
+                        return this.error(tr('noRepo', at[1]));
+                    }
+                    if (!at[2] || at[2].charAt(0) === '@') {
+                        return this.error(tr('repoUsage'));
+                    }
+                    this._entry = at[2];
+                    split = at[2].split(/\s+/);
+                    this.showRepo(view);
+                    view.remoteViews = view.remoteViews || { remotes: Object.create(null), urls: Object.create(null) };
+                    this.historyView = view;
+                    this.remotes = view.remoteViews.remotes;
+                    this.urls = view.remoteViews.urls;
+                    this.originView = this.remotes.origin || null;
+                } else if (this.historyView) {
+                    // in the classroom the person typing is the author
+                    this.historyView.authorName = (who && who.name) || null;
+                }
+                this._command(split);
+            } finally {
+                Object.assign(this, home);
+            }
+        },
+
+        _command: function (split) {
             var before = this.historyView && this.historyView.refSnapshot();
             try {
                 this._run(split);
@@ -481,7 +513,7 @@ function controlBoxFactory() {
         },
 
         commit: function (args) {
-            var amend = false, all = false, allowEmpty = false, message,
+            var amend = false, all = false, allowEmpty = false, message, author,
                 flags = ['--amend', '-a', '--all', '--allow-empty', '--no-edit'];
 
             while (args.length > 0) {
@@ -495,6 +527,16 @@ function controlBoxFactory() {
                     allowEmpty = true;
                 } else if (arg === '--amend') {
                     amend = true;
+                } else if (arg.indexOf('--author=') === 0) {
+                    // --author="Ann Smith" may come in several words
+                    author = arg.slice(9);
+                    while (/^["']/.test(author) && !/.["']$/.test(author) && args.length) {
+                        author += ' ' + args.shift();
+                    }
+                    author = author.replace(/^["']|["']$/g, '');
+                    if (!author) {
+                        return this.error();
+                    }
                 } else if (arg !== '-a' && arg !== '--all' && arg !== '--allow-empty' && arg !== '--no-edit') {
                     return this.error();
                 }
@@ -517,14 +559,14 @@ function controlBoxFactory() {
             if (hv.operation && hv.operation.type === 'merge') {
                 var op = hv.operation;
                 hv.operation = null;
-                return hv.commit({ parent2: op.theirs, isNoFFCommit: op.noFF || undefined, tree: clone(hv.index) },
+                return hv.commit({ parent2: op.theirs, isNoFFCommit: op.noFF || undefined, tree: clone(hv.index), author: author },
                     message || "Merge branch '" + op.label + "'");
             }
 
             if (amend) {
                 hv.amend(message);
             } else {
-                hv.commit({}, message);
+                hv.commit({ author: author }, message);
             }
         },
 
@@ -1156,8 +1198,15 @@ function controlBoxFactory() {
             if (commit.parent2) {
                 this.diffLine('Merge: ' + hv.getCommit(commit.parent).id + ' ' + commit.parent2, 'head');
             }
+            this._author(commit, 'head');
             this.diffLine('    ' + (commit.message || ''), 'ctx');
             this._printDiff(hv.getCommit(commit.parent).tree || {}, commit.tree || {}, [], false);
+        },
+
+        _author: function (commit, kind) {
+            if (commit && commit.author) {
+                this.diffLine('Author: ' + commit.author, kind);
+            }
         },
 
         status: function (args) {
@@ -1426,6 +1475,7 @@ function controlBoxFactory() {
                     control.diffLine('commit ' + e.id + (hv.decorations(e.id) ? ' (' + hv.decorations(e.id) + ')' : ''), 'commit');
                     control.diffLine('Reflog: ' + ref + '@{' + i + '}', 'ctx');
                     control.diffLine('Reflog message: ' + e.msg, 'ctx');
+                    control._author(c, 'ctx');
                     control.diffLine('    ' + ((c && c.message) || ''), 'ctx');
                 });
             }
@@ -1479,6 +1529,7 @@ function controlBoxFactory() {
                     if (c.parent2) {
                         control.diffLine('Merge: ' + hv.getCommit(c.parent).id + ' ' + c.parent2, 'ctx');
                     }
+                    control._author(c, 'ctx');
                     control.diffLine('    ' + (c.message || ''), 'ctx');
                 }
                 if (o.patch || o.stat) {
@@ -2481,6 +2532,7 @@ function historyViewFactory(d3) {
         this.pointerMargin = this.commitRadius * 1.3;
 
         this.isRemote = typeof config.remoteName === 'string';
+        this.remoteName = config.remoteName;
         this.remotes = config.remotes || ['origin'];
         this._legacyStatus = 'clean'; // working tree without files (0.2.0): clean, staged or unstaged
         this.index = {};                // files of the active worktree: path -> lines
@@ -2803,6 +2855,11 @@ function historyViewFactory(d3) {
                 .duration(500)
                 .attr('r', this.commitRadius);
 
+            // the author as tooltip
+            var titles = this.commitBox.selectAll('circle.commit').selectAll('title')
+                .data(function (d) { return d.author ? [d.author] : []; });
+            titles.exit().remove();
+            titles.enter().append('svg:title').merge(titles).text(String);
         },
 
         _renderPointers: function () {
@@ -3771,7 +3828,7 @@ function historyViewFactory(d3) {
             if (this.isAncestor(source, 'HEAD')) {
                 throw new Error(tr('alreadyInHead', ref));
             }
-            this.commit({ cherryPickedFrom: source.id }, source.message);
+            this.commit({ cherryPickedFrom: source.id, author: source.author }, source.message);
             return source;
         },
 
@@ -3796,6 +3853,10 @@ function historyViewFactory(d3) {
             !commit.tags && (commit.tags = []);
 
             commit.message = message;
+            if (!commit.author) {
+                commit.author = this.authorName || this.config['user.name'] ||
+                    (this.isRemote ? this.remoteName : 'you');
+            }
             if (!commit.tree) {
                 commit.tree = clone(this.index);
             }
@@ -4188,12 +4249,12 @@ function historyViewFactory(d3) {
         _commitStep: function (item, message) {
             var commit = this.getCommit(item.id);
             if (item.kind === 'pick') {
-                this.commit({ cherryPickedFrom: commit.id }, message || commit.message);
+                this.commit({ cherryPickedFrom: commit.id, author: commit.author }, message || commit.message);
             } else if (item.kind === 'revert') {
                 commit.reverted = true;
                 this.commit({ reverts: commit.id }, message || 'Revert "' + (commit.message || commit.id) + '"');
             } else {
-                this.commit({ rebased: true }, message || commit.message);
+                this.commit({ rebased: true, author: commit.author }, message || commit.message);
                 this.operation.map[commit.id] = this.getCommit('HEAD').id;
             }
             return { from: commit.id, to: this.getCommit('HEAD').id };

@@ -14,7 +14,7 @@ const DEV = ['git commit -m one', 'git switch -c dev', 'git commit -m d1', 'git 
 
 test('log prints commits newest first', () => {
   const { r, lines } = out(TWO.concat('git log'))
-  assert.deepEqual(lines.slice(0, 4), [`commit ${id(r, 'HEAD')} (HEAD -> master)`, '    two', `commit ${id(r, 'HEAD~')}`, '    one'])
+  assert.deepEqual(lines.slice(0, 6), [`commit ${id(r, 'HEAD')} (HEAD -> master)`, 'Author: you', '    two', `commit ${id(r, 'HEAD~')}`, 'Author: you', '    one'])
 })
 test('log --oneline with decorations', () => {
   const { r, lines } = out(['git commit -m one', 'git push', 'git tag v1', 'git commit -m two', 'git log --oneline'], { origin: true })

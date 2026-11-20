@@ -102,7 +102,7 @@ export class Sandbox {
 
   createRepo(repo) {
     const name = this.name
-    return (this.world[repo] = new HistoryView({
+    const view = (this.world[repo] = new HistoryView({
       name: 'ExplainGit-' + name + (repo === 'origin' ? '-Origin' : '-World-' + repo),
       seed: name + '-' + repo,
       width: 300,
@@ -112,6 +112,8 @@ export class Sandbox {
       currentBranch: this.init,
       commitData: initialCommits(this.init)
     }))
+    view.initReflog()
+    return view
   }
 
   // a pane for a repository of the world, stacked on the right

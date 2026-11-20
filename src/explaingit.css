@@ -356,3 +356,9 @@
     stroke: #D400A6;
     stroke-width: 6;
 }
+
+/* annotated tags: a tag object with a message */
+.explaingit g.branch-tag.git-tag.annotated > rect {
+    stroke-width: 3;
+    fill: #A8DBFF;
+}

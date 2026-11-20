@@ -132,6 +132,7 @@ export function viewInfo(hv) {
     head: headCommit ? headCommit.id : null,
     status: hv.status || 'clean',
     operation: hv.operation ? hv.operation.type : null,
+    tags: Object.fromEntries(hv.tagNames().map(t => [t, hv.tagInfo[t] ? 'annotated' : 'lightweight'])),
     files: JSON.parse(JSON.stringify({ head: hv.headTree(), index: hv.index, work: hv.work })),
     // [path, branch, head] of every worktree, by path
     worktrees: hv.worktrees
@@ -223,6 +224,8 @@ export function compare(actual, expected, { status = true, files = false } = {})
   }
   if (problems.length) return problems
 
+  for (const [t, kind] of Object.entries(expected[0][1].tags || {}))
+    if ((actual[0][1].tags || {})[t] !== kind) return [tr('wrongTagKind', t)]
   if (status && actual[0][1].status !== expected[0][1].status) return [tr('wrongStatus')]
   if (files) {
     const fa = actual[0][1].files, fe = expected[0][1].files

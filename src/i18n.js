@@ -143,6 +143,10 @@ const TEXT = {
     softResetConflict: 'Cannot do a soft reset in the middle of a merge.',
     unmergedPath: p => `path '${p}' is unmerged`,
     noChangesAdded: 'no changes added to commit (use "git add")',
+    tagExists: t => `tag '${t}' already exists`,
+    noNames: 'No names found, cannot describe anything.',
+    noAnnotated: 'No annotated tags can describe this commit; try --tags.',
+    wrongTagKind: t => `Tag "${t}" is not of the right kind yet (annotated or lightweight).`,
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -282,6 +286,10 @@ const TEXT = {
     softResetConflict: 'Ein soft-Reset ist mitten in einem Merge nicht möglich.',
     unmergedPath: p => `Pfad '${p}' ist nicht zusammengeführt`,
     noChangesAdded: 'keine Änderungen zum Commit vorgemerkt (benutze "git add")',
+    tagExists: t => `Tag '${t}' existiert bereits`,
+    noNames: 'Keine Namen gefunden, kann nichts beschreiben.',
+    noAnnotated: 'Kein annotiertes Tag beschreibt diesen Commit; versuche --tags.',
+    wrongTagKind: t => `Tag „${t}“ hat noch nicht die richtige Art (annotiert oder leichtgewichtig).`,
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -421,6 +429,10 @@ const TEXT = {
     softResetConflict: 'Неможливо виконати soft reset посеред злиття.',
     unmergedPath: p => `шлях '${p}' не злитий`,
     noChangesAdded: 'немає змін, доданих до коміту (використайте "git add")',
+    tagExists: t => `тег '${t}' вже існує`,
+    noNames: 'Імен не знайдено, неможливо нічого описати.',
+    noAnnotated: 'Жоден анотований тег не описує цей коміт; спробуйте --tags.',
+    wrongTagKind: t => `Тег «${t}» ще не того типу (анотований чи легкий).`,
     upToDate: 'Уже актуально.'
   }
 }

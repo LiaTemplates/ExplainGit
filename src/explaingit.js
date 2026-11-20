@@ -633,24 +633,50 @@ function controlBoxFactory() {
             this._changeBranch(name, opt);
         },
 
+        // tag [-l [<pattern>]] | tag -d <name> | tag [-a] [-m <msg>] <name> [<rev>]
         tag: function (args) {
-            if (args.length < 1) {
-                this.info(tr('tagList'));
-
-                return;
-            }
-            
-            while (args.length > 0) {
-                var arg = args.shift();
-
-                try {
-                    this.historyView.tag(arg);
-                } catch (err) {
-                    if (err.code !== 'exists') {
-                        throw new Error(err.message);
-                    }
+            var hv = this.historyView, control = this, msg = null, annotated = false, del = false, list = false, pos = [];
+            args = args.slice();
+            while (args.length) {
+                var a = args.shift();
+                if (a === '-a' || a === '--annotate') {
+                    annotated = true;
+                } else if (a === '-m' || a === '--message') {
+                    annotated = true;
+                    msg = takeMessage(args, ['-a', '-d']);
+                } else if (a === '-d' || a === '--delete') {
+                    del = true;
+                } else if (a === '-l' || a === '--list') {
+                    list = true;
+                } else if (a.charAt(0) !== '-') {
+                    pos.push(a.replace(/^(["'])(.*)\1$/, '$2'));
                 }
             }
+            if (del) {
+                if (!pos[0] || !hv.getCommit('[' + pos[0] + ']')) {
+                    throw new Error(tr('noRef', pos[0] || ''));
+                }
+                hv._removeTag('[' + pos[0] + ']');
+                delete hv.tagInfo[pos[0]];
+                return hv.renderTags();
+            }
+            if (list || !pos.length) {
+                var pattern = new RegExp('^' + (list && pos[0] ? pos[0] : '*').split('*').map(function (part) {
+                    return part.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+                }).join('.*') + '$');
+                return hv.tagNames().filter(function (t) { return pattern.test(t); }).forEach(function (t) { control.plain(t); });
+            }
+            var target = hv.getCommit(pos[1] || 'HEAD');
+            if (!target || target.id === ROOT) {
+                throw new Error(tr('noRef', pos[1]));
+            }
+            if (hv.tagNames().indexOf(pos[0]) > -1) {
+                throw new Error(tr('tagExists', pos[0]));
+            }
+            if (annotated) {
+                hv.tagInfo[pos[0]] = { message: msg || '' };
+            }
+            hv.branch('[' + pos[0] + ']', target.id);
         },
 
         // --soft keeps the undone changes staged, --mixed (default) unstaged, --hard drops them
@@ -995,6 +1021,11 @@ function controlBoxFactory() {
                 commit = hv.getCommit(ref);
             if (!commit) {
                 throw new Error(tr('noRef', ref));
+            }
+            if (hv.tagInfo[ref]) {
+                this.diffLine('tag ' + ref, 'head');
+                this.plain(hv.tagInfo[ref].message);
+                this.plain('');
             }
             this.diffLine('commit ' + commit.id, 'head');
             if (commit.parent2) {
@@ -1434,6 +1465,31 @@ function controlBoxFactory() {
             });
         },
 
+        // describe [--tags] [<rev>]: the nearest tag, plus distance and id
+        describe: function (args) {
+            var hv = this.historyView,
+                all = args.indexOf('--tags') > -1,
+                ref = args.filter(function (a) { return a.charAt(0) !== '-'; })[0] || 'HEAD',
+                commit = hv.getCommit(ref);
+            if (!commit || commit.id === ROOT) {
+                throw new Error(tr('noRef', ref));
+            }
+            var best = null;
+            hv.tagNames().forEach(function (t) {
+                var tagged = hv.getCommit('[' + t + ']');
+                if ((all || hv.tagInfo[t]) && hv.isAncestor(tagged, commit)) {
+                    var n = hv.revList([commit.id], [tagged.id]).length;
+                    if (!best || n < best.n) {
+                        best = { name: t, n: n };
+                    }
+                }
+            });
+            if (!best) {
+                throw new Error(tr(all || !hv.tagNames().length ? 'noNames' : 'noAnnotated'));
+            }
+            this.plain(best.n ? best.name + '-' + best.n + '-g' + commit.id : best.name);
+        },
+
         // rev-parse <rev>... / --abbrev-ref HEAD
         'rev-parse': function (args) {
             var hv = this.historyView, control = this,
@@ -1690,6 +1746,17 @@ function controlBoxFactory() {
                 resultMessage += tr('fetched', fetchBranches[fb], fb) + ' ';
             }
 
+            // tags on commits we have come along
+            origin.tagNames().forEach(function (t) {
+                var c = local.getCommit(origin.getCommit('[' + t + ']').id);
+                if (c && local.tagNames().indexOf(t) === -1) {
+                    c.tags.push('[' + t + ']');
+                    if (origin.tagInfo[t]) {
+                        local.tagInfo[t] = origin.tagInfo[t];
+                    }
+                }
+            });
+
             // --prune: drop origin/<b> when the remote has no <b> any more
             if (args && (args.indexOf('--prune') > -1 || args.indexOf('-p') > -1)) {
                 local.branches.slice().forEach(function (b) {
@@ -1744,6 +1811,39 @@ function controlBoxFactory() {
             }
         },
 
+        // copy the commits the remote does not have yet, parents first
+        _copyCommits: function (remote, commit) {
+            var local = this.historyView, toPush = [],
+                copy = function (c) {
+                    while (c && c.id !== ROOT && remote.getCommit(c.id) === null &&
+                           toPush.every(function (p) { return p.id !== c.id; })) {
+                        toPush.unshift({ id: c.id, parent: c.parent, parent2: c.parent2, message: c.message, tree: clone(c.tree), tags: [] });
+                        if (typeof c.parent2 === 'string') {
+                            copy(local.getCommit(c.parent2));
+                        }
+                        c = local.getCommit(c.parent);
+                    }
+                };
+            copy(commit);
+            remote.commitData = remote.commitData.concat(toPush);
+        },
+
+        _pushTag: function (remote, name) {
+            var local = this.historyView, commit = local.getCommit('[' + name + ']'),
+                there = remote.getCommit('[' + name + ']');
+            if (there && there.id !== commit.id) {
+                throw new Error(tr('tagExists', name));
+            }
+            this._copyCommits(remote, commit);
+            if (!there) {
+                remote.getCommit(commit.id).tags.push('[' + name + ']');
+            }
+            if (local.tagInfo[name]) {
+                remote.tagInfo[name] = local.tagInfo[name];
+            }
+            remote.renderCommits();
+        },
+
         // push [-u] [-f | --force-with-lease] [--delete] [<remote> [<local>[:<remote>]]]
         push: function (args) {
             var local = this.historyView,
@@ -1759,6 +1859,10 @@ function controlBoxFactory() {
                     opt.lease = true;
                 } else if (arg === '-d' || arg === '--delete') {
                     opt.remove = true;
+                } else if (arg === '--tags') {
+                    opt.tags = true;
+                } else if (arg === '--follow-tags') {
+                    opt.followTags = true;
                 } else if (arg.charAt(0) !== '-') {
                     positional.push(arg);
                 }
@@ -1778,6 +1882,23 @@ function controlBoxFactory() {
                 throw new Error(tr('noRemoteNamed', remoteName));
             }
 
+            var control = this;
+            if (opt.tags) {
+                return local.tagNames().forEach(function (t) { control._pushTag(remote, t); });
+            }
+            // push origin :refs/tags/<tag> deletes like --delete
+            if (refspec[2] === ':' && !refspec[1]) {
+                opt.remove = true;
+                positional[1] = refspec[3].replace(/^refs\/(tags|heads)\//, '');
+            }
+            if (opt.remove && positional[1] && remote.getCommit('[' + positional[1] + ']') && !remote.isLocalBranch(positional[1])) {
+                remote._removeTag('[' + positional[1] + ']');
+                delete remote.tagInfo[positional[1]];
+                return remote.renderTags();
+            }
+            if (positional[1] && !opt.remove && local.tagNames().indexOf(positional[1]) > -1 && !local.isLocalBranch(positional[1])) {
+                return this._pushTag(remote, positional[1]);
+            }
             if (opt.remove) {
                 if (!positional[1]) {
                     throw new Error(tr('needBranchName'));
@@ -1820,33 +1941,20 @@ function controlBoxFactory() {
                     }
                 }
 
-                // copy the commits the remote does not have yet, parents first
-                var toPush = [],
-                    copy = function (commit) {
-                        while (commit && commit.id !== ROOT && remote.getCommit(commit.id) === null &&
-                               toPush.every(function (c) { return c.id !== commit.id; })) {
-                            toPush.unshift({
-                                id: commit.id,
-                                parent: commit.parent,
-                                parent2: commit.parent2,
-                                message: commit.message,
-                                tree: clone(commit.tree),
-                                tags: []
-                            });
-                            if (typeof commit.parent2 === 'string') {
-                                copy(local.getCommit(commit.parent2));
-                            }
-                            commit = local.getCommit(commit.parent);
-                        }
-                    };
-                copy(localCommit);
-
-                remote.commitData = remote.commitData.concat(toPush);
+                this._copyCommits(remote, localCommit);
                 remote.moveTag(remoteRef, localCommit.id);
                 remote.renderCommits();
             }
 
             local.moveTag(tracking, localCommit.id);
+            if (opt.followTags) {
+                // annotated tags on commits the remote now has
+                local.tagNames().forEach(function (t) {
+                    if (local.tagInfo[t] && remote.getCommit(local.getCommit('[' + t + ']').id)) {
+                        control._pushTag(remote, t);
+                    }
+                });
+            }
             if (opt.upstream) {
                 local.upstream[localRef] = tracking;
                 this.info(tr('upstreamSet', localRef, tracking));
@@ -2141,6 +2249,7 @@ function historyViewFactory(d3) {
         this.work = {};
         this.stashes = [];      // commit ids, newest first
         this.config = {};       // git config of this repository
+        this.tagInfo = {};      // annotated tags: name -> {message}
         this.reflog = {};       // ref -> [{id, msg}], newest first; HEAD per worktree
         this.operation = null;  // merge/cherry-pick/revert/rebase that stopped at a conflict
         this.upstream = {};     // branch -> remote tracking branch, set by push -u / branch -u
@@ -2699,7 +2808,7 @@ function historyViewFactory(d3) {
                     if (d.name.indexOf('HEAD ') === 0) {
                         classes += ' head-tag worktree-head';
                     } else if (d.name.indexOf('[') === 0 && d.name.indexOf(']') === d.name.length - 1) {
-                        classes += ' git-tag';
+                        classes += ' git-tag' + (view.tagInfo[d.name.slice(1, -1)] ? ' annotated' : '');
                     } else if (d.name.indexOf('stash@{') === 0) {
                         classes += ' stash-tag';
                     } else if (view.isRemoteRef(d.name)) {
@@ -2911,6 +3020,18 @@ function historyViewFactory(d3) {
                 });
             });
             return { active: this.active, branch: this.currentBranch, head: head && head.id, branches: branches };
+        },
+
+        tagNames: function () {
+            var names = [];
+            this.commitData.forEach(function (c) {
+                c.tags.forEach(function (t) {
+                    if (t.charAt(0) === '[' && names.indexOf(t.slice(1, -1)) === -1) {
+                        names.push(t.slice(1, -1));
+                    }
+                });
+            });
+            return names.sort();
         },
 
         // ids reachable from refs, every worktree HEAD, stashes, a running operation and

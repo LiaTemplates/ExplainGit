@@ -25,6 +25,7 @@ export const SCRIPTS = [
   { name: 'log', cmds: ['git commit -m one', 'git switch -c dev', 'git commit -m d1', 'git switch master', 'git commit -m m1', 'git merge dev', 'git log --oneline --all', 'git log master..dev'] },
   { name: 'reflog', cmds: ['git commit -m a', 'git commit -m lost', 'git reset --hard HEAD~', 'git branch rescue HEAD@{1}', 'git reflog', 'git log -g'] },
   { name: 'gc', cmds: ['git commit -m a', 'git commit -m lost', 'git reset --hard HEAD~', 'git fsck --no-reflogs', 'git reflog expire --expire=now --all', 'git gc --prune=now'] },
+  { name: 'tags', opts: { origin: true }, cmds: ['git commit -m a', 'git tag -a v1 -m one', 'git commit -m b', 'git tag v2', 'git push --follow-tags', 'git describe', 'git tag -d v2'] },
 ]
 
 // graph, file contents, index and working tree; also in another language

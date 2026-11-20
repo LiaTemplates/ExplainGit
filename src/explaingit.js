@@ -1,7 +1,7 @@
 import * as d3selection from 'd3-selection'
 import 'd3-transition'
 import { tr, fill } from './i18n.js'
-import { sameLines, formatDiff, changedPaths, diffStat, blobId, mergeTrees, blame, lineMap, diffLines } from './files.js'
+import { sameLines, formatDiff, changedPaths, diffStat, blobId, mergeTrees, blame, lineMap, diffLines, treeId, treeEntries } from './files.js'
 
 // id of the pseudo commit before the first one; contains a space, so no command can name it
 export const ROOT = 'initial commit'
@@ -2155,6 +2155,104 @@ function controlBoxFactory() {
             hv.highlight(shown);
         },
 
+        // cat-file -t | -p | -s | -e <object>
+        'cat-file': function (args) {
+            var hv = this.historyView, control = this,
+                flag = args.filter(function (a) { return a.charAt(0) === '-'; })[0],
+                name = args.filter(function (a) { return a.charAt(0) !== '-'; })[0],
+                obj = hv.findObject(name);
+            if (!name || ['-t', '-p', '-s', '-e'].indexOf(flag) === -1) {
+                throw new Error(tr('catFileUsage'));
+            }
+            if (!obj) {
+                throw new Error(tr('noObject', name));
+            }
+            if (flag === '-e') {
+                return;
+            }
+            var text = this._objectText(obj);
+            if (flag === '-t') {
+                return this.plain(obj.type);
+            }
+            if (flag === '-s') {
+                return this.plain(String(text.join('\n').length + (text.length ? 1 : 0)));
+            }
+            text.forEach(function (l) { control.plain(l); });
+        },
+
+        _objectText: function (obj) {
+            var hv = this.historyView, c = obj.data;
+            if (obj.type === 'blob') {
+                return c;
+            }
+            if (obj.type === 'tree') {
+                return treeEntries(c);
+            }
+            var out = ['tree ' + treeId(c.tree || {})];
+            [c.parent, c.parent2].forEach(function (p) {
+                if (p && p !== ROOT && hv.getCommit(p)) {
+                    out.push('parent ' + p);
+                }
+            });
+            return out.concat(['author ' + (c.author || 'you'), '', c.message || '']);
+        },
+
+        // hash-object [-w] <file>
+        'hash-object': function (args) {
+            var hv = this.historyView,
+                path = args.filter(function (a) { return a.charAt(0) !== '-'; })[0],
+                lines = hv.work[path];
+            if (!path || !Array.isArray(lines)) {
+                throw new Error(tr('noFile', path || ''));
+            }
+            this.plain(args.indexOf('-w') > -1 ? hv.storeObject('blob', lines) : blobId(lines));
+        },
+
+        // ls-files [-s]: the index; conflicts show their stages
+        'ls-files': function (args) {
+            var hv = this.historyView, control = this, stage = args.indexOf('-s') > -1 || args.indexOf('--stage') > -1;
+            Object.keys(hv.index).sort().forEach(function (p) {
+                var e = hv.index[p];
+                if (!stage) {
+                    return control.plain(p);
+                }
+                if (Array.isArray(e)) {
+                    return control.plain('100644 ' + blobId(e) + ' 0\t' + p);
+                }
+                [e.unmerged.base, e.unmerged.ours, e.unmerged.theirs].forEach(function (l, i) {
+                    if (l) {
+                        control.plain('100644 ' + blobId(l) + ' ' + (i + 1) + '\t' + p);
+                    }
+                });
+            });
+        },
+
+        // ls-tree [-r] <tree-ish> (files only, so -r lists the same)
+        'ls-tree': function (args) {
+            var hv = this.historyView, control = this,
+                name = args.filter(function (a) { return a.charAt(0) !== '-'; })[0],
+                obj = hv.findObject(name);
+            if (obj && obj.type === 'commit') {
+                obj = { type: 'tree', data: obj.data.tree || {} };
+            }
+            if (!obj || obj.type !== 'tree') {
+                throw new Error(tr('notTree', name || ''));
+            }
+            treeEntries(obj.data).forEach(function (l) { control.plain(l); });
+        },
+
+        // update-index [--add] <file>: git add for plumbing
+        'update-index': function (args) {
+            var hv = this.historyView,
+                paths = args.filter(function (a) { return a.charAt(0) !== '-'; });
+            paths.forEach(function (p) {
+                if (!(p in hv.index) && args.indexOf('--add') === -1) {
+                    throw new Error(tr('needAddOption', p));
+                }
+            });
+            this.add(paths);
+        },
+
         // bisect start [<bad> [<good>...]] | bad/new | good/old | skip [<rev>...] | reset | log
         bisect: function (args) {
             var hv = this.historyView, control = this, sub = args[0], st = hv.bisectState,
@@ -2936,6 +3034,7 @@ function historyViewFactory(d3) {
         this.reflog = Object.create(null);  // ref -> [{id, msg}], newest first; HEAD per worktree
         this.operation = null;  // merge/cherry-pick/revert/rebase that stopped at a conflict
         this.bisectState = null; // git bisect: {orig, bad, good, skip, log}
+        this.objects = Object.create(null); // blobs and trees written by hash-object -w / write-tree
         this.upstream = Object.create(null); // branch -> remote tracking branch, set by push -u / branch -u
         // worktrees: the active one lives in currentBranch, HEAD and status
         this.worktrees = [{ path: '.', branch: this.currentBranch, head: null, status: 'clean' }];
@@ -3250,7 +3349,7 @@ function historyViewFactory(d3) {
 
             // the author as tooltip
             var titles = this.commitBox.selectAll('circle.commit').selectAll('title')
-                .data(function (d) { return d.author ? [d.author] : []; });
+                .data(function (d) { return d.stash || d.id === ROOT ? [] : [(d.author ? d.author + '\n' : '') + 'tree ' + treeId(d.tree || {})]; });
             titles.exit().remove();
             titles.enter().append('svg:title').merge(titles).text(String);
         },
@@ -3603,6 +3702,18 @@ function historyViewFactory(d3) {
                 th.textContent = label;
                 headRow.appendChild(th);
             });
+            // the trees HEAD and the index stand for (git write-tree)
+            var foot = table.createTFoot().insertRow(), label = document.createElement('th');
+            label.scope = 'row';
+            label.textContent = 'tree';
+            foot.appendChild(label);
+            [head, this.hasUnmerged() ? null : index].forEach(function (t) {
+                var td = foot.insertCell();
+                td.className = 'notranslate';
+                td.setAttribute('translate', 'no');
+                td.textContent = t ? treeId(t) : '–';
+            });
+            foot.insertCell();
             var body = table.createTBody();
             allPaths(head, index, work).forEach(function (p) {
                 var row = body.insertRow(),
@@ -4017,6 +4128,55 @@ function historyViewFactory(d3) {
             }
 
             return inTree;
+        },
+
+        // an object by name: <rev>, <rev>^{tree}, <rev>:<path>, or the id of a blob/tree git has
+        findObject: function (name) {
+            var view = this, m, commit, found = null;
+            if (!name) {
+                return null;
+            }
+            if ((m = /^(.+)\^\{tree\}$/.exec(name))) {
+                commit = this.getCommit(m[1]);
+                return commit && commit.id !== ROOT ? { type: 'tree', id: treeId(commit.tree || {}), data: commit.tree || {} } : null;
+            }
+            if ((m = /^([^:]*):(.+)$/.exec(name))) {
+                commit = this.getCommit(m[1] || 'HEAD');
+                var lines = commit && commit.tree && commit.tree[m[2]];
+                return Array.isArray(lines) ? { type: 'blob', id: blobId(lines), data: lines } : null;
+            }
+            if (this.objects[name]) {
+                return this.objects[name];
+            }
+            commit = this.getCommit(name);
+            if (commit && commit.id !== ROOT && !/^\[/.test(name)) {
+                return { type: 'commit', id: commit.id, data: commit };
+            }
+            if (!/^[0-9a-f]{4,7}$/.test(name)) {
+                return null;
+            }
+            // blobs and trees of every commit and of the index
+            var trees = this.commitData.map(function (c) { return c.tree || {}; }).concat([this.index]);
+            trees.forEach(function (tree) {
+                if (found) {
+                    return;
+                }
+                if (treeId(tree).indexOf(name) === 0) {
+                    found = { type: 'tree', id: treeId(tree), data: tree };
+                }
+                Object.keys(tree).forEach(function (p) {
+                    if (!found && Array.isArray(tree[p]) && blobId(tree[p]).indexOf(name) === 0) {
+                        found = { type: 'blob', id: blobId(tree[p]), data: tree[p] };
+                    }
+                });
+            });
+            return found;
+        },
+
+        storeObject: function (type, data) {
+            var id = type === 'tree' ? treeId(data) : blobId(data);
+            this.objects[id] = { type: type, id: id, data: clone(data) };
+            return id;
         },
 
         // commits marked good/bad/skip during git bisect

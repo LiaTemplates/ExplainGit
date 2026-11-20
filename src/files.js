@@ -3,9 +3,8 @@
 
 const same = (a, b) => a === b || (!!a && !!b && a.length === b.length && a.every((l, i) => l === b[i]))
 
-// id of a content, like a short blob hash (FNV-1a + murmur3 final mix)
-export function blobId(lines) {
-  const str = 'blob ' + lines.join('\n')
+// short id of an object (FNV-1a + murmur3 final mix)
+function hash(str) {
   let h = 0x811c9dc5
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i)
@@ -18,6 +17,14 @@ export function blobId(lines) {
   h ^= h >>> 16
   return ('0000000' + h.toString(16)).slice(-7)
 }
+
+export const blobId = lines => hash('blob ' + lines.join('\n'))
+
+// a tree: its entries sorted by path (files only, no folders)
+export const treeEntries = tree =>
+  Object.keys(tree).sort().filter(p => Array.isArray(tree[p])).map(p => '100644 blob ' + blobId(tree[p]) + '\t' + p)
+
+export const treeId = tree => hash('tree ' + treeEntries(tree).join('\n'))
 
 // lcs[i][j] = length of the longest common subsequence of a[i..] and b[j..]
 function lcsTable(a, b) {

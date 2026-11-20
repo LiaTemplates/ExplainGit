@@ -133,7 +133,8 @@ export class Sandbox {
   }
 
   stackPanes() {
-    this.panes.forEach((view, i) => view.svgContainer.style('top', i * 230 + 'px'))
+    this.panes.forEach((view, i) => view.svgContainer.style('--pane', i))
+    this.playground.node().parentNode.style.setProperty('--panes', this.panes.length || 1)
   }
 
   run(cmd, who) {

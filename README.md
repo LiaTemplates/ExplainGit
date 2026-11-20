@@ -1,7 +1,7 @@
 <!--
 author:   Yannik Höll
 email:    labruzzler@gmail.com
-version:  0.4.0
+version:  0.5.0
 edit:     true
 language: en
 narrator: US English Female
@@ -61,7 +61,7 @@ the right state, and let a whole classroom work on one repository together.
 
 Import the template into your course (pinned version or latest):
 
-`import: https://raw.githubusercontent.com/LiaTemplates/ExplainGit/0.4.0/README.md`
+`import: https://raw.githubusercontent.com/LiaTemplates/ExplainGit/0.5.0/README.md`
 
 `import: https://raw.githubusercontent.com/LiaTemplates/ExplainGit/master/README.md`
 
@@ -83,7 +83,8 @@ Based on [explain-git-with-d3](https://github.com/onlywei/explain-git-with-d3)
 
 `@ExplainGit.eval` below a code block runs its commands first, one per line.
 Empty lines and lines starting with `#` are skipped. A line `create origin` adds
-a remote repository named `origin`. A first line `git init -b main` names the
+a remote repository named `origin`; `create <name>` adds another repository (a
+colleague, a fork, a second server), see the slides "Remotes" to "Forks". A first line `git init -b main` names the
 first branch `main` instead of `master`. Files are written like in a shell:
 `echo "text" > file.txt` and `echo "more" >> file.txt`; see the slide "Files and
 diff". Without files, `edit` stands for an abstract change.
@@ -361,6 +362,88 @@ git -C ../hotfix commit
 ```
 
 
+## Remotes
+
+Every remote gets its own window on the right. `git remote add` connects a
+repository of the course: the last part of the url names it (`…/ticgit` is the
+repository `ticgit`, created with `create ticgit`), otherwise a new one is made.
+`git fetch` brings every branch as `<remote>/<branch>`; `git switch <b>` creates a
+local branch that follows `<remote>/<b>`.
+
+``` text  @ExplainGit.eval
+create origin
+create ticgit
+git remote add pb https://github.com/paulboone/ticgit
+@ticgit git switch -c serverfix
+@ticgit git commit -m fix
+git fetch pb
+git switch serverfix
+git remote -v
+```
+
+A command that starts with `@<repository>` runs in that repository, as if a
+colleague typed it there. Refspecs work too: `git fetch origin
+master:refs/remotes/origin/mymaster`, `git push origin serverfix:awesomebranch`,
+`git push origin +dev:dev`.
+
+
+## Working in a team
+
+John and Jessica push to the same server. Jessica (`@origin`) was faster, so
+John's push is rejected. Every commit remembers its author (`git config user.name`,
+`git commit --author="Ann"`, in the classroom the person who typed it); `git log`
+shows it, and so does the tooltip of a commit.
+
+``` text  @ExplainGit.eval
+create origin
+git commit -m start
+git push
+@origin git config user.name Jessica
+@origin git commit -m "Add reset task"
+git config user.name John
+git commit -m "Remove invalid default value"
+git push
+```
+
+__Try it:__ Your push was rejected. Bring your commit to `origin` with a merge
+(do not rewrite it).
+
+``` text  @ExplainGit.quiz
+create origin
+git commit -m start
+git push
+@origin git commit -m "Add reset task"
+git commit -m "Remove invalid default value"
+---
+git fetch
+git merge origin/master
+git push
+```
+
+
+## Forks
+
+In the integration-manager workflow you push to your own fork (`origin`) and the
+maintainer pulls from it into the official repository (`upstream`). Before that
+you rebase onto the newest `upstream`, so your work applies cleanly.
+
+``` text  @ExplainGit.eval
+create origin
+create upstream
+git remote add upstream https://github.com/project/upstream
+git switch -c topic
+git commit -m feature
+git push -u origin topic
+@upstream git commit -m "maintainer moves on"
+git fetch upstream
+git rebase upstream/master
+git push -f origin topic
+@upstream git remote add fork ../origin.git
+@upstream git fetch fork
+@upstream git merge fork/topic
+```
+
+
 ## Working together
 
 In a LiaScript classroom every repository gets the button __Collaborate__. It works like the
@@ -420,13 +503,17 @@ never translated.
 | `git stash [push] [-u] [--keep-index] [-m msg]`, `pop`, `apply [--index]`, `drop`, `list`, `branch <b>` | |
 | `git worktree add [-b <b>] [--detach] <path> [<ref>]`, `list`, `remove [--force]` | |
 | `cd <path>`, `git -C <path> <command>` | `.` is the main worktree |
-| `git fetch [--prune]`, `git pull [--rebase / --ff-only]` | needs `create origin` |
-| `git push [-u] [--force-with-lease / -f] [--tags / --follow-tags] [origin <b or tag>]`, `git push origin --delete <b or tag>` | needs `create origin` |
+| `git remote [-v]`, `git remote add <name> <url>`, `rename`, `remove`, `show <name>`, `git ls-remote <name>` | |
+| `git fetch [<remote> [[+]<src>[:<dst>]]] [--all] [--prune]`, `git pull [<remote> [<b>]] [--rebase / --ff-only]` | needs a remote |
+| `git push [-u] [--force-with-lease / -f] [--tags / --follow-tags] [<remote> [+]<b or tag>[:<dst>]]`, `git push <remote> --delete <b or tag>` | needs a remote |
+| `git switch <b>` / `git checkout <b>` when only `<remote>/<b>` exists, `git checkout --track <remote>/<b>` | a local branch that follows it |
+| `@<repository> <command>` | runs in another repository of the course |
+| `git config user.name <n>`, `git commit --author="<n>"` | the author of a commit |
 | `git init -b <name>` | only as the first line of a code block |
 
 Revisions like `HEAD^`, `main~2`, `HEAD^2`, `@{u}` and `HEAD@{2}` work
 everywhere. Files are small text files without folders. Not included yet:
-interactive rebase, `bisect`, `blame`, several remotes, `.gitignore`.
+interactive rebase, `bisect`, `blame`, `.gitignore`.
 
 
 ## Implementation

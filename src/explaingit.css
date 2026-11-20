@@ -27,7 +27,6 @@
 
 .explaingit {
     position: relative;
-    height: 450px;
     background-color: #FFF;
     color: #000;
     border: 1px solid #AAA;
@@ -45,8 +44,9 @@
 }
 
 .explaingit .playground-container {
-    position: absolute;
-    top: 0; bottom: 0; left: 0; right: 0;
+    position: relative;
+    /* grows when several remote windows stand on the right (--panes) */
+    height: max(450px, calc(var(--panes, 1) * 230px + 15px));
 }
 
 .explaingit .control-box {
@@ -149,7 +149,7 @@
 }
 
 .explaingit .svg-container.remote-container {
-    top: 0; right: 0; left: auto; bottom: auto;
+    top: calc(var(--pane, 0) * 230px); right: 0; left: auto; bottom: auto;
     background-color: #EFF1FF;
     border-left: 1px dotted #AAA;
     border-bottom: 1px dotted #AAA;
@@ -172,8 +172,12 @@
     }
 
     .explaingit .svg-container.remote-container {
-        top: 150px;
+        top: calc(150px + var(--pane, 0) * 230px);
         width: 50%;
+    }
+
+    .explaingit .playground-container {
+        height: max(450px, calc(150px + var(--panes, 1) * 230px + 15px));
     }
 }
 

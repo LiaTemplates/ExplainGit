@@ -14,8 +14,14 @@ export const { viewInfo, parseCommands, snapshot, compare } = repo
 export function run(cmds, opts = {}) {
   const area = document.createElement('div')
   document.body.appendChild(area)
+  const lang = document.documentElement.lang
+  if (opts.lang) document.documentElement.lang = opts.lang
   const box = new repo.Sandbox(area, opts.name || 'test', { origin: !!opts.origin, init: opts.init || 'master', intro: '' })
-  for (const cmd of cmds) box.run(cmd)
+  try {
+    for (const cmd of cmds) box.run(cmd)
+  } finally {
+    document.documentElement.lang = lang
+  }
   const log = [...area.querySelectorAll('.log > div')].map(el => ({
     kind: el.classList.contains('command-entry') ? 'cmd' : el.classList.contains('error') ? 'error' : el.classList.contains('diff') ? 'diff' : 'info',
     text: el.textContent.replace(/[⁨⁩]/g, '')
@@ -23,9 +29,13 @@ export function run(cmds, opts = {}) {
   return { box, log, state: repo.snapshot(box) }
 }
 
-export const same = (a, b, opts) => repo.compare(run(a, opts).state, run(b, opts).state).length === 0
+// like the quiz: status and file contents count when the commands use them
+export const same = (a, b, opts) => {
+  const all = a.concat(b)
+  return repo.compare(run(a, opts).state, run(b, opts).state, { status: repo.needsStatus(all), files: repo.needsFiles(all) }).length === 0
+}
 
-export const graph = box => box.hv.commitData.map(c => [c.id, c.parent, c.parent2 || null, [...c.tags].sort()])
+export const graph = box => box.hv.commitData.map(c => [c.id, c.parent, c.parent2 || null, [...c.tags].sort(), JSON.stringify(c.tree || {})])
 
 const strip = v => JSON.parse(JSON.stringify({ ...v, byId: undefined }))
 

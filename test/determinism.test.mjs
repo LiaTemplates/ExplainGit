@@ -24,5 +24,10 @@ export const SCRIPTS = [
   { name: 'stash with files', cmds: ['echo a > f', 'git add f', 'git commit', 'echo b >> f', 'echo u > u', 'git stash -u', 'git stash list', 'git stash pop', 'git add f', 'git stash --keep-index', 'git stash apply --index'] },
 ]
 
-for (const { name, cmds, opts } of SCRIPTS)
-  test(`replay is identical: ${name}`, () => assert.deepEqual(graph(run(cmds, opts).box), graph(run(cmds, opts).box)))
+// graph, file contents, index and working tree; also in another language
+const result = box => ({ graph: graph(box), index: box.hv.index, work: box.hv.work })
+for (const { name, cmds, opts } of SCRIPTS) {
+  test(`replay is identical: ${name}`, () => assert.deepEqual(result(run(cmds, opts).box), result(run(cmds, opts).box)))
+  test(`replay does not depend on the language: ${name}`, () =>
+    assert.deepEqual(result(run(cmds, { ...opts, lang: 'de' }).box), result(run(cmds, { ...opts, lang: 'en' }).box)))
+}

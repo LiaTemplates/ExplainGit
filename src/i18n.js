@@ -104,8 +104,6 @@ const TEXT = {
     worktreeLine: (p, id, b) => `${p}  ${id} [${b}]`,
     worktreeLineDetached: (p, id) => `${p}  ${id} (detached HEAD)`,
     stashLine: (n, m) => `stash@{${n}}: ${m}`,
-    stashWip: b => `WIP on ${b}`,
-    stashOn: (b, m) => `On ${b}: ${m}`,
     statusStaged: 'Changes to be committed:',
     statusUnstaged: 'Changes not staged for commit:',
     statusUntracked: 'Untracked files:',
@@ -141,6 +139,10 @@ const TEXT = {
     stoppedAt: (id, m) => `Could not apply ${id}... ${m}`,
     resolveHint: t => `Resolve the conflicts, mark them with git add, then run git ${t} --continue (or --skip, --abort).`,
     wrongFiles: 'The files are not in the right state yet.',
+    shellUsage: 'Usage: echo "text" > file  (quotes must be closed, one file name)',
+    softResetConflict: 'Cannot do a soft reset in the middle of a merge.',
+    unmergedPath: p => `path '${p}' is unmerged`,
+    noChangesAdded: 'no changes added to commit (use "git add")',
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -241,8 +243,6 @@ const TEXT = {
     worktreeLine: (p, id, b) => `${p}  ${id} [${b}]`,
     worktreeLineDetached: (p, id) => `${p}  ${id} (losgelöster HEAD)`,
     stashLine: (n, m) => `stash@{${n}}: ${m}`,
-    stashWip: b => `WIP auf ${b}`,
-    stashOn: (b, m) => `Auf ${b}: ${m}`,
     statusStaged: 'Zum Commit vorgemerkte Änderungen:',
     statusUnstaged: 'Änderungen, die nicht zum Commit vorgemerkt sind:',
     statusUntracked: 'Unversionierte Dateien:',
@@ -278,6 +278,10 @@ const TEXT = {
     stoppedAt: (id, m) => `Konnte ${id}... ${m} nicht anwenden`,
     resolveHint: t => `Konflikte lösen, mit git add markieren, dann git ${t} --continue (oder --skip, --abort).`,
     wrongFiles: 'Die Dateien sind noch nicht im richtigen Zustand.',
+    shellUsage: 'Aufruf: echo "Text" > datei  (Anführungszeichen schließen, ein Dateiname)',
+    softResetConflict: 'Ein soft-Reset ist mitten in einem Merge nicht möglich.',
+    unmergedPath: p => `Pfad '${p}' ist nicht zusammengeführt`,
+    noChangesAdded: 'keine Änderungen zum Commit vorgemerkt (benutze "git add")',
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -378,8 +382,6 @@ const TEXT = {
     worktreeLine: (p, id, b) => `${p}  ${id} [${b}]`,
     worktreeLineDetached: (p, id) => `${p}  ${id} (від’єднаний HEAD)`,
     stashLine: (n, m) => `stash@{${n}}: ${m}`,
-    stashWip: b => `WIP на ${b}`,
-    stashOn: (b, m) => `На ${b}: ${m}`,
     statusStaged: 'Зміни, які будуть закомічені:',
     statusUnstaged: 'Зміни, не додані до коміту:',
     statusUntracked: 'Невідстежувані файли:',
@@ -415,6 +417,10 @@ const TEXT = {
     stoppedAt: (id, m) => `Не вдалося застосувати ${id}... ${m}`,
     resolveHint: t => `Розв’яжіть конфлікти, позначте їх через git add, потім git ${t} --continue (або --skip, --abort).`,
     wrongFiles: 'Файли ще не в потрібному стані.',
+    shellUsage: 'Використання: echo "текст" > файл  (закрийте лапки, одна назва файлу)',
+    softResetConflict: 'Неможливо виконати soft reset посеред злиття.',
+    unmergedPath: p => `шлях '${p}' не злитий`,
+    noChangesAdded: 'немає змін, доданих до коміту (використайте "git add")',
     upToDate: 'Уже актуально.'
   }
 }

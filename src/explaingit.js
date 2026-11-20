@@ -74,6 +74,49 @@ function controlBoxFactory() {
     // shell commands on the working tree
     var SHELL = ['echo', 'cat', 'ls', 'rm', 'mv'];
 
+    // shell words: "quoted text" stays one word (quotes removed), > and >> are words of their own
+    var tokenize = function (line) {
+        var words = [], word = null, quote = null, i, ch;
+        for (i = 0; i < line.length; i++) {
+            ch = line.charAt(i);
+            if (quote) {
+                if (ch === quote) {
+                    quote = null;
+                } else {
+                    word += ch;
+                }
+            } else if (ch === '"' || ch === "'") {
+                quote = ch;
+                word = word || '';
+            } else if (ch === '>') {
+                if (word !== null) {
+                    words.push(word);
+                    word = null;
+                }
+                if (line.charAt(i + 1) === '>') {
+                    words.push('>>');
+                    i++;
+                } else {
+                    words.push('>');
+                }
+            } else if (/\s/.test(ch)) {
+                if (word !== null) {
+                    words.push(word);
+                    word = null;
+                }
+            } else {
+                word = (word || '') + ch;
+            }
+        }
+        if (quote) {
+            throw new Error(tr('shellUsage'));
+        }
+        if (word !== null) {
+            words.push(word);
+        }
+        return words;
+    };
+
     // the message after -m: "in quotes", or every word up to the next known flag
     // (0.1.0 courses write git commit -m Hello World)
     var takeMessage = function (args, flags) {
@@ -195,6 +238,7 @@ function controlBoxFactory() {
             }
 
             var split = entry.split(/\s+/);
+            this._entry = entry;
 
             var line = this.log.append('div')
                 .classed('command-entry', true)
@@ -225,16 +269,20 @@ function controlBoxFactory() {
 
         // echo text | echo "text" > file | echo text >> file
         _echo: function (args) {
-            var text = takeMessage(args, ['>', '>>']),
-                op = args.shift(),
-                file = args.shift(),
+            var redirect = Math.max(args.indexOf('>'), args.indexOf('>>')),
+                text = (redirect > -1 ? args.slice(0, redirect) : args).join(' '),
+                op = redirect > -1 ? args[redirect] : null,
+                file = redirect > -1 ? args[redirect + 1] : null,
                 work = this.historyView.work;
 
             if (!op) {
-                return this.info(text);
+                return this.plain(text);
             }
             if (!file) {
                 throw new Error(tr('needPath'));
+            }
+            if (args.length > redirect + 2) {
+                throw new Error(tr('shellUsage'));
             }
             work[file] = (op === '>>' && work[file] ? work[file] : []).concat([text]);
         },
@@ -244,13 +292,13 @@ function controlBoxFactory() {
             if (!args[0] || !work[args[0]]) {
                 throw new Error(tr('noFile', args[0] || ''));
             }
-            work[args[0]].forEach(function (line) { control.info(line); });
+            work[args[0]].forEach(function (line) { control.plain(line); });
         },
 
         _ls: function () {
             var names = Object.keys(this.historyView.work).sort();
             if (names.length) {
-                this.info(names.join('  '));
+                this.plain(names.join('  '));
             }
         },
 
@@ -264,8 +312,11 @@ function controlBoxFactory() {
 
         _mv: function (args) {
             var work = this.historyView.work;
-            if (!args[0] || !work[args[0]] || !args[1]) {
-                throw new Error(tr('noFile', args[0] || ''));
+            if (!args[0] || !args[1]) {
+                throw new Error(tr('needPath'));
+            }
+            if (!work[args[0]]) {
+                throw new Error(tr('noFile', args[0]));
             }
             work[args[1]] = work[args[0]];
             delete work[args[0]];
@@ -289,7 +340,7 @@ function controlBoxFactory() {
             }
 
             if (SHELL.indexOf(split[0]) > -1) {
-                return this['_' + split[0]](split.slice(1));
+                return this['_' + split[0]](tokenize(this._entry || split.join(' ')).slice(1));
             }
 
             if (split[0] === 'cd') {
@@ -326,6 +377,16 @@ function controlBoxFactory() {
             }
         },
 
+        // file contents and other git data: shown as they are, never translated
+        plain: function (text) {
+            this.log.append('div')
+                .classed('info', true)
+                .classed('notranslate', true)
+                .attr('translate', 'no')
+                .text(text);
+            this._scrollToBottom();
+        },
+
         info: function (msg) {
             this.log.append('div').classed('info', true).each(function () { fill(this, msg); });
             this._scrollToBottom();
@@ -357,21 +418,25 @@ function controlBoxFactory() {
                 }
             }
 
-            var hv = this.historyView;
-            if (all && hv.hasFiles()) {
-                hv.stageTracked();
-            }
-            if (hv.hasUnmerged()) {
+            var hv = this.historyView,
+                staged = all && hv.hasFiles() ? hv.stagedTracked() : hv.index;
+            if (Object.keys(staged).some(function (p) { return !Array.isArray(staged[p]); })) {
                 throw new Error(tr('unmergedFiles'));
+            }
+            if (!amend && !allowEmpty && !hv.squashPending && !(hv.operation && hv.operation.type === 'merge') &&
+                hv.hasFiles() && sameTree(staged, hv.headTree())) {
+                throw new Error(tr(hv.fileStatus().some(function (f) { return f.y !== ' ' && f.y !== '?'; }) ? 'noChangesAdded' : 'statusNothing'));
+            }
+            hv.index = staged;
+            // git commit inside a stopped cherry-pick/revert/rebase finishes that step
+            if (hv.operation && hv.operation.current) {
+                return hv.commitCurrent(message);
             }
             if (hv.operation && hv.operation.type === 'merge') {
                 var op = hv.operation;
                 hv.operation = null;
                 return hv.commit({ parent2: op.theirs, isNoFFCommit: op.noFF || undefined, tree: clone(hv.index) },
                     message || "Merge branch '" + op.label + "'");
-            }
-            if (!amend && !allowEmpty && !hv.squashPending && hv.hasFiles() && sameTree(hv.index, hv.headTree())) {
-                throw new Error(tr('statusNothing'));
             }
 
             if (amend) {
@@ -615,9 +680,16 @@ function controlBoxFactory() {
                 return paths.forEach(function (p) { setPath(hv.index, p, source.tree[p]); });
             }
 
+            if (mode === 'soft' && hv.hasUnmerged()) {
+                throw new Error(tr('softResetConflict'));
+            }
             var before = hv.getCommit('HEAD').id,
                 untracked = hv.untracked();
             hv.reset(ref);
+            // like git: a reset ends a merge, cherry-pick or revert (not a rebase)
+            if (hv.operation && hv.operation.type !== 'rebase') {
+                hv.operation = null;
+            }
             var moved = hv.getCommit('HEAD').id !== before;
 
             if (hv.hasFiles() && mode !== 'soft') {
@@ -652,6 +724,10 @@ function controlBoxFactory() {
                 if (hv.status === 'unstaged') {
                     hv.setStatus('staged');
                 }
+                return;
+            }
+            if (args.indexOf('-u') > -1 || args.indexOf('--update') > -1) {
+                hv.index = hv.stagedTracked();
                 return;
             }
             var paths = hv.pathsFor(args);
@@ -755,6 +831,9 @@ function controlBoxFactory() {
                 if (known.indexOf(p) === -1) {
                     throw new Error(tr('noMatch', p));
                 }
+                if (worktree && !staged && !src && hv.index[p] && !Array.isArray(hv.index[p])) {
+                    throw new Error(tr('unmergedPath', p));
+                }
             });
             paths.forEach(function (p) {
                 if (staged) {
@@ -791,6 +870,9 @@ function controlBoxFactory() {
             paths.forEach(function (p) {
                 if (!from[p]) {
                     throw new Error(tr('noMatch', p));
+                }
+                if (!Array.isArray(from[p])) {
+                    throw new Error(tr('unmergedPath', p));
                 }
             });
             paths.forEach(function (p) {
@@ -1024,6 +1106,9 @@ function controlBoxFactory() {
                 index = Number((/^stash@\{(\d+)\}$/.exec(ref) || [])[1]);
 
             if (action === 'push' || action === 'save') {
+                if (hv.hasUnmerged()) {
+                    throw new Error(tr('unmergedFiles'));
+                }
                 var opt = {
                     untracked: args.indexOf('-u') > -1 || args.indexOf('--include-untracked') > -1,
                     keepIndex: args.indexOf('--keep-index') > -1 || args.indexOf('-k') > -1
@@ -1164,6 +1249,9 @@ function controlBoxFactory() {
             if (this._sequenceFlag('revert', args)) {
                 return;
             }
+            if (!ref) {
+                throw new Error(tr('needRef'));
+            }
             if (hv.hasFiles()) {
                 var commit = hv.getCommit(ref);
                 if (!commit) {
@@ -1281,7 +1369,10 @@ function controlBoxFactory() {
             if (opt.onto && !hv.getCommit(opt.onto)) {
                 throw new Error(tr('noRef', opt.onto));
             }
-            // git rebase <upstream> <branch>: switch to <branch> first
+            // git rebase <upstream> <branch>: switch to <branch> first (not with changes)
+            if (positional[1] && hv.hasFiles() && hv.fileStatus().some(function (f) { return f.x !== '?'; })) {
+                throw new Error(tr('dirtyRebase'));
+            }
             if (positional[1]) {
                 this._changeBranch(positional[1], {});
             }
@@ -1405,6 +1496,11 @@ function controlBoxFactory() {
                 control.info(tr('fastForwardTo', rtBranch));
             } else if (result === 'Up-To-Date') {
                 control.info(tr('upToDate'));
+            } else if (result && result.at) {
+                control._printSequence('rebase', result);
+            } else if (result && result.conflicts) {
+                result.conflicts.forEach(function (p) { control.info(tr('conflictIn', p)); });
+                control.info(tr('mergeFailed'));
             }
         },
 
@@ -1523,7 +1619,7 @@ function controlBoxFactory() {
             var hv = this.historyView, control = this;
             args = args.filter(function (a) { return a !== '--global' && a !== '--local' && a !== '--system'; });
             if (args[0] === '--list' || args[0] === '-l') {
-                return Object.keys(hv.config).sort().forEach(function (k) { control.info(k + '=' + hv.config[k]); });
+                return Object.keys(hv.config).sort().forEach(function (k) { control.plain(k + '=' + hv.config[k]); });
             }
             var key = args[0];
             if (!key) {
@@ -1531,7 +1627,7 @@ function controlBoxFactory() {
             }
             if (args.length === 1) {
                 if (key in hv.config) {
-                    this.info(hv.config[key]);
+                    this.plain(hv.config[key]);
                 }
                 return;
             }
@@ -2521,30 +2617,28 @@ function historyViewFactory(d3) {
             });
         },
 
-        // the nearest common ancestor of two refs (breadth-first from b, first parents first)
+        // the best common ancestor: common to both, and no other common ancestor is newer
+        // (several: the first one reached breadth-first from b)
         mergeBase: function (a, b) {
-            var view = this, seen = {}, todo = [this.getCommit(a)], c;
-            while (todo.length) {
-                c = todo.shift();
-                if (c && c.id !== ROOT && !seen[c.id]) {
-                    seen[c.id] = true;
-                    todo.push(view.getCommit(c.parent), c.parent2 && view.getCommit(c.parent2));
-                }
-            }
-            todo = [this.getCommit(b)];
-            var visited = {};
-            while (todo.length) {
-                c = todo.shift();
-                if (!c || c.id === ROOT || visited[c.id]) {
-                    continue;
-                }
-                if (seen[c.id]) {
-                    return c;
-                }
-                visited[c.id] = true;
-                todo.push(view.getCommit(c.parent), c.parent2 && view.getCommit(c.parent2));
-            }
-            return null;
+            var view = this,
+                walk = function (start) {
+                    var order = [], seen = {}, todo = [view.getCommit(start)], c;
+                    while (todo.length) {
+                        c = todo.shift();
+                        if (c && c.id !== ROOT && !seen[c.id]) {
+                            seen[c.id] = true;
+                            order.push(c);
+                            todo.push(view.getCommit(c.parent), c.parent2 && view.getCommit(c.parent2));
+                        }
+                    }
+                    return order;
+                },
+                inA = {};
+            walk(a).forEach(function (c) { inA[c.id] = true; });
+            var common = walk(b).filter(function (c) { return inA[c.id]; });
+            return common.filter(function (c) {
+                return !common.some(function (d) { return d !== c && view.isAncestor(c, d); });
+            })[0] || null;
         },
 
         // paths in the working tree that the index does not know; .files keeps their content
@@ -2579,9 +2673,9 @@ function historyViewFactory(d3) {
             }
         },
 
-        // commit -a: tracked files take their working tree content
-        stageTracked: function () {
-            var index = this.index, work = this.work;
+        // commit -a / add -u: a copy of the index where tracked files take their working tree content
+        stagedTracked: function () {
+            var index = clone(this.index), work = this.work;
             Object.keys(index).forEach(function (p) {
                 if (work[p]) {
                     index[p] = clone(work[p]);
@@ -2589,6 +2683,7 @@ function historyViewFactory(d3) {
                     delete index[p];
                 }
             });
+            return index;
         },
 
         _setCurrentBranch: function (branch) {
@@ -2772,8 +2867,8 @@ function historyViewFactory(d3) {
                 commit = {
                 id: this.nextId(),
                 parent: this.getCommit('HEAD').id,
-                // stored as plain text: the marks are only for display
-                message: (text ? tr('stashOn', where, text) : tr('stashWip', where)).replace(/[\u2068\u2069]/g, ''),
+                // like git: the same message in every language (it ends up in commits and conflict labels)
+                message: text ? 'On ' + where + ': ' + text : 'WIP on ' + where,
                 tags: [],
                 stash: true
             };
@@ -3218,7 +3313,13 @@ function historyViewFactory(d3) {
                 before: { index: clone(this.index), work: clone(this.work) },
                 map: {}
             };
-            return this._continueSequence();
+            try {
+                return this._continueSequence();
+            } catch (e) {
+                // refused before anything changed: no cherry-pick/revert is left open
+                this.operation = null;
+                throw e;
+            }
         },
 
         _rebaseFiles: function (base, toRebase, opt) {
@@ -3273,15 +3374,15 @@ function historyViewFactory(d3) {
             return { done: done };
         },
 
-        _commitStep: function (item) {
+        _commitStep: function (item, message) {
             var commit = this.getCommit(item.id);
             if (item.kind === 'pick') {
-                this.commit({ cherryPickedFrom: commit.id }, commit.message);
+                this.commit({ cherryPickedFrom: commit.id }, message || commit.message);
             } else if (item.kind === 'revert') {
                 commit.reverted = true;
-                this.commit({ reverts: commit.id }, 'Revert "' + (commit.message || commit.id) + '"');
+                this.commit({ reverts: commit.id }, message || 'Revert "' + (commit.message || commit.id) + '"');
             } else {
-                this.commit({ rebased: true }, commit.message);
+                this.commit({ rebased: true }, message || commit.message);
                 this.operation.map[commit.id] = this.getCommit('HEAD').id;
             }
             return { from: commit.id, to: this.getCommit('HEAD').id };
@@ -3301,6 +3402,17 @@ function historyViewFactory(d3) {
                 this.renderTags();
             }
             this.operation = null;
+        },
+
+        // git commit while a cherry-pick/revert/rebase stopped: finish that step;
+        // a cherry-pick or revert with nothing left ends here
+        commitCurrent: function (message) {
+            var op = this.operation;
+            this._commitStep(op.current, message);
+            op.current = null;
+            if (!op.todo.length && op.type !== 'rebase') {
+                this._finishSequence();
+            }
         },
 
         continueOperation: function (type) {
@@ -3334,6 +3446,10 @@ function historyViewFactory(d3) {
                     this.work[p] = untracked.files[p];
                 }
             }, this);
+            if (op.type === 'rebase') {
+                // --update-refs: a branch on the skipped commit goes where HEAD is now
+                op.map[op.current.id] = this.getCommit('HEAD').id;
+            }
             op.current = null;
             return this._continueSequence();
         },

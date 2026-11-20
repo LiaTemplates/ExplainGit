@@ -27,7 +27,7 @@ test('list output is translated and names are protected', () => {
   document.documentElement.lang = 'de'
   try {
     const log = run(['edit', 'git stash', 'git worktree add --detach ../wt', 'git stash list', 'git worktree list']).log
-    assert.deepEqual(log.filter(l => l.kind === 'info').slice(-3).map(l => l.text), ['stash@{0}: WIP auf master', '.  e137e9b [master]', '../wt  e137e9b (losgelöster HEAD)'])
+    assert.deepEqual(log.filter(l => l.kind === 'info').slice(-3).map(l => l.text), ['stash@{0}: WIP on master', '.  e137e9b [master]', '../wt  e137e9b (losgelöster HEAD)'])
   } finally { document.documentElement.lang = 'en' }
 })
 test('stash push -m keeps the message', () => {

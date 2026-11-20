@@ -130,6 +130,13 @@ const TEXT = {
     indexColumn: 'Index',
     workColumn: 'Working tree',
     conflictCell: 'conflict',
+    conflictIn: p => `CONFLICT (content): Merge conflict in ${p}`,
+    mergeFailed: 'Automatic merge failed; fix conflicts and then commit the result.',
+    unmergedFiles: 'Committing is not possible because you have unmerged files.',
+    operationInProgress: t => `A ${t} is in progress: finish it with --continue or stop it with --abort.`,
+    noOperation: t => `There is no ${t} to continue or abort.`,
+    notUnmerged: p => `${p} has no conflict.`,
+    configUsage: 'Usage: git config <key> [<value>] | --list',
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -256,6 +263,13 @@ const TEXT = {
     indexColumn: 'Index',
     workColumn: 'Arbeitsverzeichnis',
     conflictCell: 'Konflikt',
+    conflictIn: p => `KONFLIKT (Inhalt): Merge-Konflikt in ${p}`,
+    mergeFailed: 'Automatischer Merge fehlgeschlagen; Konflikte beheben und dann das Ergebnis committen.',
+    unmergedFiles: 'Committen ist nicht möglich, weil es nicht zusammengeführte Dateien gibt.',
+    operationInProgress: t => `Ein ${t} läuft: mit --continue fortsetzen oder mit --abort abbrechen.`,
+    noOperation: t => `Es gibt keinen ${t} zum Fortsetzen oder Abbrechen.`,
+    notUnmerged: p => `${p} hat keinen Konflikt.`,
+    configUsage: 'Aufruf: git config <schlüssel> [<wert>] | --list',
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -382,6 +396,13 @@ const TEXT = {
     indexColumn: 'Індекс',
     workColumn: 'Робочий каталог',
     conflictCell: 'конфлікт',
+    conflictIn: p => `КОНФЛІКТ (вміст): конфлікт злиття у ${p}`,
+    mergeFailed: 'Автоматичне злиття не вдалося; розв’яжіть конфлікти й закомітьте результат.',
+    unmergedFiles: 'Неможливо закомітити: є незлиті файли.',
+    operationInProgress: t => `Триває ${t}: продовжте через --continue або скасуйте через --abort.`,
+    noOperation: t => `Немає ${t}, щоб продовжити чи скасувати.`,
+    notUnmerged: p => `У ${p} немає конфлікту.`,
+    configUsage: 'Використання: git config <ключ> [<значення>] | --list',
     upToDate: 'Уже актуально.'
   }
 }

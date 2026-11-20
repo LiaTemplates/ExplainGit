@@ -1,7 +1,7 @@
 import * as d3selection from 'd3-selection'
 import 'd3-transition'
 import { tr, fill } from './i18n.js'
-import { sameLines, formatDiff, changedPaths, diffStat, blobId } from './files.js'
+import { sameLines, formatDiff, changedPaths, diffStat, blobId, mergeTrees } from './files.js'
 
 // id of the pseudo commit before the first one; contains a space, so no command can name it
 export const ROOT = 'initial commit'
@@ -361,6 +361,15 @@ function controlBoxFactory() {
             if (all && hv.hasFiles()) {
                 hv.stageTracked();
             }
+            if (hv.hasUnmerged()) {
+                throw new Error(tr('unmergedFiles'));
+            }
+            if (hv.operation && hv.operation.type === 'merge') {
+                var op = hv.operation;
+                hv.operation = null;
+                return hv.commit({ parent2: op.theirs, isNoFFCommit: op.noFF || undefined, tree: clone(hv.index) },
+                    message || "Merge branch '" + op.label + "'");
+            }
             if (!amend && !allowEmpty && !hv.squashPending && hv.hasFiles() && sameTree(hv.index, hv.headTree())) {
                 throw new Error(tr('statusNothing'));
             }
@@ -439,6 +448,9 @@ function controlBoxFactory() {
         // switch and checkout: opt = {create, force, start, detach, lenient}
         _changeBranch: function (name, opt) {
             var hv = this.historyView;
+            if (hv.operation) {
+                throw new Error(tr('operationInProgress', hv.operation.type));
+            }
 
             if (name === '-') {
                 if (!hv.previousBranch) {
@@ -493,6 +505,10 @@ function controlBoxFactory() {
                 hv = this.historyView,
                 dashes = args.indexOf('--');
 
+            var side = args.indexOf('--ours') > -1 ? 'ours' : args.indexOf('--theirs') > -1 ? 'theirs' : null;
+            if (side) {
+                return this._takeSide(side, args.filter(function (a) { return a.charAt(0) !== '-'; }));
+            }
             if (dashes > -1) {
                 return this._checkoutPaths(args.slice(0, dashes).filter(function (a) { return a.charAt(0) !== '-'; })[0], args.slice(dashes + 1));
             }
@@ -692,6 +708,10 @@ function controlBoxFactory() {
             if (!args.some(function (a) { return a.charAt(0) !== '-'; })) {
                 throw new Error(tr('needPath'));
             }
+            var side = args.indexOf('--ours') > -1 ? 'ours' : args.indexOf('--theirs') > -1 ? 'theirs' : null;
+            if (side) {
+                return this._takeSide(side, args.filter(function (a) { return a.charAt(0) !== '-'; }));
+            }
             if (hv.hasFiles()) {
                 return this._restoreFiles(args, staged);
             }
@@ -746,6 +766,17 @@ function controlBoxFactory() {
             });
         },
 
+        // checkout/restore --ours|--theirs <path>: one side of a conflict into the working tree
+        _takeSide: function (side, paths) {
+            var hv = this.historyView;
+            paths.forEach(function (p) {
+                if (!hv.index[p] || Array.isArray(hv.index[p])) {
+                    throw new Error(tr('notUnmerged', p));
+                }
+            });
+            paths.forEach(function (p) { setPath(hv.work, p, hv.index[p].unmerged[side]); });
+        },
+
         // checkout [<ref>] -- <path>...: files, not branches
         _checkoutPaths: function (ref, paths) {
             var hv = this.historyView,
@@ -782,6 +813,18 @@ function controlBoxFactory() {
         },
 
         _printDiff: function (a, b, paths, stat) {
+            // unmerged index entries have no single content
+            var plain = function (t) {
+                var out = {};
+                Object.keys(t).forEach(function (p) {
+                    if (Array.isArray(t[p])) {
+                        out[p] = t[p];
+                    }
+                });
+                return out;
+            };
+            a = plain(a);
+            b = plain(b);
             var control = this,
                 only = function (p) { return !paths.length || paths.indexOf(p) > -1; };
             if (stat) {
@@ -1054,6 +1097,19 @@ function controlBoxFactory() {
                 opt = {},
                 branch;
 
+            if (args.indexOf('--abort') > -1) {
+                return hv.abortOperation('merge');
+            }
+            if (args.indexOf('--continue') > -1) {
+                if (!hv.operation || hv.operation.type !== 'merge') {
+                    throw new Error(tr('noOperation', 'merge'));
+                }
+                return this.commit([]);
+            }
+            if (hv.operation) {
+                throw new Error(tr('operationInProgress', hv.operation.type));
+            }
+
             args.forEach(function (arg) {
                 if (arg === '--no-ff') {
                     opt.noFF = true;
@@ -1089,12 +1145,16 @@ function controlBoxFactory() {
                 throw new Error(tr('notFastForward'));
             }
 
-            var result = hv.merge(branch, opt.noFF);
+            var result = hv.merge(branch, opt.noFF),
+                control = this;
 
             if (result === 'Fast-Forward') {
                 this.info(tr('fastForward'));
             } else if (result === 'Up-To-Date') {
                 this.info(tr('upToDate'));
+            } else if (result && result.conflicts) {
+                result.conflicts.forEach(function (p) { control.info(tr('conflictIn', p)); });
+                this.info(tr('mergeFailed'));
             }
         },
 
@@ -1239,7 +1299,7 @@ function controlBoxFactory() {
             }
 
             // at once, not after a delay: replaying commands must give the same state
-            var result = args[0] === '--rebase' || control.rebaseConfig[currentBranch] === 'true'
+            var result = args[0] === '--rebase' || control.rebaseConfig[currentBranch] === 'true' || local.config['pull.rebase'] === 'true'
                 ? local.rebase(rtBranch)
                 : local.merge(rtBranch);
 
@@ -1359,13 +1419,27 @@ function controlBoxFactory() {
             local.renderTags();
         },
 
+        // config [--global|--local] <key> [<value>] | --list  (one set of settings per repository)
         config: function (args) {
-            var path = args.shift().split('.');
-
-            if (path[0] === 'branch') {
-                if (path[2] === 'rebase') {
-                    this.rebase[path[1]] = args.pop();
+            var hv = this.historyView, control = this;
+            args = args.filter(function (a) { return a !== '--global' && a !== '--local' && a !== '--system'; });
+            if (args[0] === '--list' || args[0] === '-l') {
+                return Object.keys(hv.config).sort().forEach(function (k) { control.info(k + '=' + hv.config[k]); });
+            }
+            var key = args[0];
+            if (!key) {
+                throw new Error(tr('configUsage'));
+            }
+            if (args.length === 1) {
+                if (key in hv.config) {
+                    this.info(hv.config[key]);
                 }
+                return;
+            }
+            hv.config[key] = takeMessage(args.slice(1), []);
+            var branch = /^branch\.(.+)\.rebase$/.exec(key);
+            if (branch) {
+                this.rebaseConfig[branch[1]] = hv.config[key];
             }
         }
     };
@@ -1631,6 +1705,8 @@ function historyViewFactory(d3) {
         this.index = {};                // files of the active worktree: path -> lines
         this.work = {};
         this.stashes = [];      // commit ids, newest first
+        this.config = {};       // git config of this repository
+        this.operation = null;  // merge/cherry-pick/revert/rebase that stopped at a conflict
         this.upstream = {};     // branch -> remote tracking branch, set by push -u / branch -u
         // worktrees: the active one lives in currentBranch, HEAD and status
         this.worktrees = [{ path: '.', branch: this.currentBranch, head: null, status: 'clean' }];
@@ -2544,6 +2620,7 @@ function historyViewFactory(d3) {
             current.status = this.status;
             current.index = this.index;
             current.work = this.work;
+            current.operation = this.operation;
             current.previous = this.previousBranch;
             current.squash = this.squashPending;
 
@@ -2553,6 +2630,7 @@ function historyViewFactory(d3) {
             this.squashPending = next.squash || null;
             this.index = next.index || {};
             this.work = next.work || {};
+            this.operation = next.operation || null;
             this.checkout(next.branch || next.head);
             this.setStatus(next.status);
         },
@@ -2890,15 +2968,18 @@ function historyViewFactory(d3) {
 
             if (this.isAncestor(mergeTarget, currentCommit)) {
                 return 'Up-To-Date';
-            } else if (noFF === true) {
-                // the first commit of the merged branch: its parent is already in HEAD
-                var branchStartCommit = mergeTarget;
-                while (!this.isAncestor(branchStartCommit.parent, currentCommit)) {
-                    branchStartCommit = this.getCommit(branchStartCommit.parent);
+            }
+            if (this.hasFiles() || Object.keys(mergeTarget.tree).length) {
+                if (noFF !== true && this.isAncestor(currentCommit, mergeTarget)) {
+                    this.switchTrees(mergeTarget.tree, true);
+                    this.switchTrees(mergeTarget.tree);
+                    this.fastForward(mergeTarget);
+                    return 'Fast-Forward';
                 }
-                
-                branchStartCommit.isNoFFBranch = true;
-                
+                return this._mergeFiles(mergeTarget, ref, noFF, currentCommit);
+            }
+            if (noFF === true) {
+                this._markNoFF(mergeTarget, currentCommit);
                 this.commit({parent2: mergeTarget.id, isNoFFCommit: true});
             } else if (this.isAncestor(currentCommit, mergeTarget)) {
                 this.fastForward(mergeTarget);
@@ -2906,6 +2987,72 @@ function historyViewFactory(d3) {
             } else {
                 this.commit({parent2: mergeTarget.id});
             }
+        },
+
+        // three-way merge of the files; stops with an operation when files conflict
+        _mergeFiles: function (target, label, noFF, currentCommit) {
+            var head = this.headTree(), index = this.index, work = this.work;
+            changedPaths(head, index).forEach(function (p) {
+                throw new Error(tr('localChanges', p));
+            });
+            var base = this.mergeBase('HEAD', target.id),
+                style = this.config['merge.conflictstyle'] === 'diff3' ? 'diff3' : 'merge',
+                result = mergeTrees(base ? base.tree : {}, head, target.tree, { ours: 'HEAD', theirs: label }, style),
+                touched = allPaths(result.tree, head).filter(function (p) {
+                    return !sameLines(head[p], result.tree[p]) || result.conflicts.indexOf(p) > -1;
+                });
+            touched.forEach(function (p) {
+                if (!sameLines(work[p], index[p])) {
+                    throw new Error(tr('localChanges', p));
+                }
+            });
+
+            var before = { index: clone(index), work: clone(work) };
+            touched.forEach(function (p) {
+                setPath(index, p, result.tree[p]);
+                setPath(work, p, result.tree[p]);
+            });
+            if (result.conflicts.length) {
+                result.conflicts.forEach(function (p) { index[p] = { unmerged: result.unmerged[p] }; });
+                this.operation = { type: 'merge', theirs: target.id, label: label, noFF: noFF === true, before: before };
+                return { conflicts: result.conflicts };
+            }
+            if (noFF === true) {
+                this._markNoFF(target, currentCommit);
+            }
+            this.commit({ parent2: target.id, isNoFFCommit: noFF === true || undefined, tree: clone(result.tree) }, "Merge branch '" + label + "'");
+        },
+
+        // layout: the merged branch is drawn beside, not on the main line
+        _markNoFF: function (target, currentCommit) {
+            var start = target;
+            while (!this.isAncestor(start.parent, currentCommit)) {
+                start = this.getCommit(start.parent);
+            }
+            start.isNoFFBranch = true;
+        },
+
+        hasUnmerged: function () {
+            var index = this.index;
+            return Object.keys(index).some(function (p) { return !Array.isArray(index[p]); });
+        },
+
+        // merge/cherry-pick/revert/rebase --abort: back to the state before it began
+        abortOperation: function (type) {
+            var op = this.operation;
+            if (!op || op.type !== type) {
+                throw new Error(tr('noOperation', type));
+            }
+            this.operation = null;
+            if (op.orig) {
+                if (op.orig.branch) {
+                    this.moveTag(op.orig.branch, op.orig.head);
+                }
+                this.checkout(op.orig.branch || op.orig.head);
+            }
+            this.index = op.before.index;
+            this.work = op.before.work;
+            this.renderCommits();
         },
 
         // opt.onto: new base instead of ref; opt.updateRefs: move branches on rebased commits too

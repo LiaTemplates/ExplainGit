@@ -111,7 +111,7 @@
 .explaingit .control-box .log .info,
 .explaingit .control-box .log .error {
     font-size: 12px;
-    padding: 5px;
+    padding: 1px 5px;
 }
 
 .explaingit .control-box .log .info {
@@ -119,9 +119,10 @@
     white-space: pre-wrap;
 }
 
-/* several output lines in a row (status, cat, diff) stay together */
-.explaingit .control-box .log .info + .info {
-    padding-top: 0;
+/* a gap after the command, output lines stay together */
+.explaingit .control-box .log .command-entry + .info,
+.explaingit .control-box .log .command-entry + .error {
+    margin-top: 3px;
 }
 
 .explaingit .control-box .log .error {

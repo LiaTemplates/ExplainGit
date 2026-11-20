@@ -1790,6 +1790,9 @@ function controlBoxFactory() {
                 if (!hv.getCommit(name) || name === hv.currentBranch) {
                     throw new Error(tr(name === hv.currentBranch ? 'deleteCurrent' : 'noRef', pos[0]));
                 }
+                if (hv.isLocalBranch(name)) {
+                    hv.checkFree(name); // checked out in another worktree: refused, like git branch -D
+                }
                 hv._removeTag(name);
                 return hv.renderTags();
             }
@@ -1797,7 +1800,12 @@ function controlBoxFactory() {
             if (!target || target.id === ROOT) {
                 throw new Error(tr('noRef', pos[1] || ''));
             }
-            hv.moveTag(name, target.id);
+            // the commit that has exactly this ref (getCommit would also find tags or ids)
+            var holder = hv.commitData.filter(function (c) { return c.tags.indexOf(name) > -1; })[0];
+            if (holder) {
+                holder.tags.splice(holder.tags.indexOf(name), 1);
+            }
+            target.tags.push(name);
             if (name === hv.currentBranch) {
                 hv.checkout(name);
             }
@@ -3934,7 +3942,17 @@ function historyViewFactory(d3) {
         // the .gitignore rule (of the working tree) that decides about an untracked path, or null;
         // the last matching line wins, `!` takes a path back, `dir/` matches what is inside
         ignored: function (path) {
-            var file = this.work['.gitignore'], found = null;
+            var file = this.work['.gitignore'], found = null,
+                // * stays inside one folder name, ** stands for any number of folders
+                segMatch = function (ps, ts) {
+                    if (!ps.length) {
+                        return !ts.length;
+                    }
+                    if (ps[0] === '**') {
+                        return segMatch(ps.slice(1), ts) || (ts.length > 0 && segMatch(ps, ts.slice(1)));
+                    }
+                    return ts.length > 0 && globMatch(ps[0], ts[0]) && segMatch(ps.slice(1), ts.slice(1));
+                };
             if (!Array.isArray(file)) {
                 return null;
             }
@@ -3949,9 +3967,10 @@ function historyViewFactory(d3) {
                     dir = /\/$/.test(pattern);
                 pattern = pattern.replace(/\/$/, '');
                 var anchored = pattern.indexOf('/') > -1,
+                    segs = pattern.replace(/^\//, '').split('/'),
                     hit = anchored
                         // a path pattern: the whole path, or a folder at the start of it
-                        ? parts.some(function (_, i) { return (dir ? i < parts.length - 1 : true) && globMatch(pattern.replace(/^\//, ''), parts.slice(0, i + 1).join('/')); })
+                        ? parts.some(function (_, i) { return (dir ? i < parts.length - 1 : true) && segMatch(segs, parts.slice(0, i + 1)); })
                         // a name: any part of the path (only folders for dir/)
                         : parts.some(function (part, i) { return (!dir || i < parts.length - 1) && globMatch(pattern, part); });
                 if (hit) {
@@ -4069,8 +4088,15 @@ function historyViewFactory(d3) {
         },
 
         pruneUnreachable: function () {
-            var keep = this.reachable({ reflog: true });
+            var keep = this.reachable({ reflog: true }), view = this;
             this.commitData = this.commitData.filter(function (c) { return keep[c.id]; });
+            // written blobs and trees go too, unless a kept commit or the index has them
+            var objects = this.objectSizes(keep);
+            Object.keys(this.objects).forEach(function (id) {
+                if (!(id in objects)) {
+                    delete view.objects[id];
+                }
+            });
             this.renderCommits();
         },
 
@@ -4273,7 +4299,7 @@ function historyViewFactory(d3) {
             var currentLoc = this.getCommit(tag),
                 newLoc = this.getCommit(ref);
 
-            if (currentLoc) {
+            if (currentLoc && currentLoc.tags.indexOf(tag) > -1) {
                 currentLoc.tags.splice(currentLoc.tags.indexOf(tag), 1);
             }
 

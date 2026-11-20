@@ -83,6 +83,10 @@ function controlBoxFactory() {
         this.remotes = config.remotes || Object.create(null); // name -> view of the remotes we know
         this.world = config.world || Object.create(null);     // every repository of the course
         this.showRepo = config.showRepo || function () {};
+        this.hideRepo = config.hideRepo || function () {};
+        this.createRepo = config.createRepo || function () { return null; };
+        this.urls = Object.create(null);                      // remote name -> url as typed
+        Object.keys(this.remotes).forEach(function (n) { this.urls[n] = '../' + n + '.git'; }, this);
         this.originView = this.remotes.origin || null;
         this.initialMessage = config.initialMessage || 'Enter git commands below.';
         this._commandHistory = [];
@@ -1835,6 +1839,131 @@ function controlBoxFactory() {
             } else if (result === 'Up-To-Date') {
                 this.info(tr('upToDate'));
             }
+        },
+
+        // remote [-v] | add <name> <url> | rename <old> <new> | remove <name> | show <name>
+        remote: function (args) {
+            var control = this, hv = this.historyView, sub = args[0],
+                names = Object.keys(this.remotes).sort(),
+                need = function (n) {
+                    if (!n || !control.remotes[n]) {
+                        throw new Error(tr('noRemoteNamed', n || ''));
+                    }
+                };
+            if (!sub || sub === '-v' || sub === '--verbose') {
+                return names.forEach(function (n) {
+                    if (sub) {
+                        control.plain(n + '\t' + control.urls[n] + ' (fetch)');
+                        control.plain(n + '\t' + control.urls[n] + ' (push)');
+                    } else {
+                        control.plain(n);
+                    }
+                });
+            }
+            if (sub === 'add') {
+                var name = args[1], url = args[2];
+                if (!name || !url) {
+                    throw new Error(tr('remoteUsage'));
+                }
+                if (this.remotes[name]) {
+                    throw new Error(tr('remoteExists', name));
+                }
+                // the url names a repository of the world by its last part (without .git)
+                var repo = url.replace(/\.git$/, '').split('/').pop();
+                var view = this.world[repo] || this.world[name] || this.createRepo(name);
+                this.remotes[name] = view;
+                this.urls[name] = url;
+                hv.remotes.push(name);
+                this.showRepo(view);
+                return view.svg && view.svg.select('text.remote-name-display').text(name);
+            }
+            if (sub === 'rename') {
+                var old = args[1], neu = args[2];
+                need(old);
+                if (!neu || this.remotes[neu]) {
+                    throw new Error(tr('remoteExists', neu || ''));
+                }
+                this.remotes[neu] = this.remotes[old];
+                this.urls[neu] = this.urls[old];
+                delete this.remotes[old];
+                delete this.urls[old];
+                hv.remotes[hv.remotes.indexOf(old)] = neu;
+                hv.commitData.forEach(function (c) {
+                    c.tags = c.tags.map(function (t) { return t.indexOf(old + '/') === 0 ? neu + t.slice(old.length) : t; });
+                });
+                hv.branches = hv.branches.map(function (t) { return t.indexOf(old + '/') === 0 ? neu + t.slice(old.length) : t; });
+                Object.keys(hv.upstream).forEach(function (b) {
+                    if (hv.upstream[b].indexOf(old + '/') === 0) {
+                        hv.upstream[b] = neu + hv.upstream[b].slice(old.length);
+                    }
+                });
+                if (this.remotes[neu].svg) {
+                    this.remotes[neu].svg.select('text.remote-name-display').text(neu);
+                }
+                this.originView = this.remotes.origin || null;
+                return hv.renderTags();
+            }
+            if (sub === 'remove' || sub === 'rm') {
+                var gone = args[1];
+                need(gone);
+                this.hideRepo(this.remotes[gone]);
+                delete this.remotes[gone];
+                delete this.urls[gone];
+                hv.remotes = hv.remotes.filter(function (n) { return n !== gone; });
+                hv.commitData.forEach(function (c) {
+                    c.tags = c.tags.filter(function (t) { return t.indexOf(gone + '/') !== 0; });
+                });
+                hv.branches = hv.branches.filter(function (t) { return t.indexOf(gone + '/') !== 0; });
+                Object.keys(hv.upstream).forEach(function (b) {
+                    if (hv.upstream[b].indexOf(gone + '/') === 0) {
+                        delete hv.upstream[b];
+                    }
+                });
+                this.originView = this.remotes.origin || null;
+                return hv.renderTags();
+            }
+            if (sub === 'show') {
+                var n = args[1];
+                need(n);
+                var remote = this.remotes[n],
+                    branches = Object.keys(remote.refSnapshot().branches).sort(),
+                    mine = Object.keys(hv.refSnapshot().branches).sort();
+                this.plain('* remote ' + n);
+                this.plain('  Fetch URL: ' + this.urls[n]);
+                this.plain('  Push  URL: ' + this.urls[n]);
+                this.plain('  HEAD branch: ' + (remote.currentBranch || '(unknown)'));
+                this.plain(branches.length === 1 ? '  Remote branch:' : '  Remote branches:');
+                branches.forEach(function (b) {
+                    control.plain('    ' + b + (hv.getCommit(n + '/' + b) ? ' tracked' : ' new (next fetch will store in remotes/' + n + ')'));
+                });
+                var pulls = mine.filter(function (b) { return (hv.upstream[b] || 'origin/' + b) === n + '/' + b && remote.isLocalBranch(b); });
+                if (pulls.length) {
+                    this.plain("  Local branch configured for 'git pull':");
+                    pulls.forEach(function (b) { control.plain('    ' + b + ' merges with remote ' + b); });
+                }
+                return;
+            }
+            throw new Error(tr('remoteUsage'));
+        },
+
+        // ls-remote <remote>: the refs of the remote with their ids
+        'ls-remote': function (args) {
+            var control = this,
+                name = args.filter(function (a) { return a.charAt(0) !== '-'; })[0] || 'origin',
+                remote = this.remotes[name];
+            if (!remote) {
+                throw new Error(tr('noRemoteNamed', name));
+            }
+            var head = remote.getCommit('HEAD');
+            if (head) {
+                this.plain(head.id + '\tHEAD');
+            }
+            Object.keys(remote.refSnapshot().branches).sort().forEach(function (b) {
+                control.plain(remote.getCommit(b).id + '\trefs/heads/' + b);
+            });
+            remote.tagNames().forEach(function (t) {
+                control.plain(remote.getCommit('[' + t + ']').id + '\trefs/tags/' + t);
+            });
         },
 
         // fetch [<remote> | --all] [--prune]: every branch of the remote to <remote>/<branch>, and tags

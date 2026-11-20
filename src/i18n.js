@@ -146,6 +146,8 @@ const TEXT = {
     aliasShell: 'Aliases that start with ! run shell commands, which this demo cannot do.',
     aliasLoop: a => `The alias ${a} keeps calling itself.`,
     needNumber: 'A number is missing.',
+    remoteExists: n => `remote ${n} already exists.`,
+    remoteUsage: 'Usage: git remote [-v] | add <name> <url> | rename <old> <new> | remove <name> | show <name>',
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -288,6 +290,8 @@ const TEXT = {
     aliasShell: 'Aliase mit ! starten Shell-Befehle, das kann diese Demo nicht.',
     aliasLoop: a => `Der Alias ${a} ruft sich immer wieder selbst auf.`,
     needNumber: 'Es fehlt eine Zahl.',
+    remoteExists: n => `Remote ${n} existiert bereits.`,
+    remoteUsage: 'Aufruf: git remote [-v] | add <name> <url> | rename <alt> <neu> | remove <name> | show <name>',
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -430,6 +434,8 @@ const TEXT = {
     aliasShell: 'Псевдоніми з ! запускають команди оболонки, цього демонстрація не вміє.',
     aliasLoop: a => `Псевдонім ${a} викликає сам себе.`,
     needNumber: 'Бракує числа.',
+    remoteExists: n => `віддалений репозиторій ${n} вже існує.`,
+    remoteUsage: 'Використання: git remote [-v] | add <назва> <url> | rename <стара> <нова> | remove <назва> | show <назва>',
     upToDate: 'Уже актуально.'
   }
 }

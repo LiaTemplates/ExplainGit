@@ -69,18 +69,8 @@ export class Sandbox {
     this.playground = playground
     this.panes = []
     const names = [...new Set((origin ? ['origin'] : []).concat(world || []))]
-    names.forEach(repo => {
-      this.world[repo] = new HistoryView({
-        name: 'ExplainGit-' + name + (repo === 'origin' ? '-Origin' : '-World-' + repo),
-        seed: name + '-' + repo,
-        width: 300,
-        height: 225,
-        commitRadius: 15,
-        remoteName: repo,
-        currentBranch: init,
-        commitData: initialCommits(init)
-      })
-    })
+    this.init = init
+    names.forEach(repo => this.createRepo(repo))
     this.ov = this.world.origin || null
     const remotes = Object.create(null)
     if (origin) {
@@ -93,6 +83,8 @@ export class Sandbox {
       remotes: remotes,
       world: this.world,
       showRepo: view => this.showRepo(view),
+      hideRepo: view => this.hideRepo(view),
+      createRepo: repo => this.createRepo(repo),
       initialMessage: intro
     })
     this.cb.render(playground)
@@ -108,12 +100,38 @@ export class Sandbox {
     this.hv.renderFiles()
   }
 
+  createRepo(repo) {
+    const name = this.name
+    return (this.world[repo] = new HistoryView({
+      name: 'ExplainGit-' + name + (repo === 'origin' ? '-Origin' : '-World-' + repo),
+      seed: name + '-' + repo,
+      width: 300,
+      height: 225,
+      commitRadius: 15,
+      remoteName: repo,
+      currentBranch: this.init,
+      commitData: initialCommits(this.init)
+    }))
+  }
+
   // a pane for a repository of the world, stacked on the right
   showRepo(view) {
     if (this.panes.includes(view)) return
     view.render(this.playground)
-    view.svgContainer.style('top', this.panes.length * 230 + 'px')
     this.panes.push(view)
+    this.stackPanes()
+  }
+
+  hideRepo(view) {
+    if (!this.panes.includes(view)) return
+    view.svgContainer.remove()
+    view.svgContainer = view.svg = null
+    this.panes = this.panes.filter(v => v !== view)
+    this.stackPanes()
+  }
+
+  stackPanes() {
+    this.panes.forEach((view, i) => view.svgContainer.style('top', i * 230 + 'px'))
   }
 
   run(cmd, who) {
@@ -125,6 +143,7 @@ export class Sandbox {
       this.cb.destroy()
       this.hv.destroy()
       this.panes.forEach(view => view.destroy())
+      Object.values(this.world).forEach(view => view.svg && !this.panes.includes(view) && view.destroy())
     } catch (e) {}
     this.playground.remove()
     this.filesPanel.remove()

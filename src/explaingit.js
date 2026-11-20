@@ -417,6 +417,12 @@ function controlBoxFactory() {
         _run: function (split) {
             var hv = this.historyView;
 
+            // rebase -i: the todo list is open, lines edit it (like an editor)
+            if (hv.operation && hv.operation.type === 'rebase-todo' &&
+                !(split[0] === 'git' && ['status', 'log', 'show', 'diff'].indexOf(split[1]) > -1)) {
+                return this._todoLine(tokenize(this._entry || split.join(' ')));
+            }
+
             if (split[0] === 'edit') {
                 // without files: the abstract change of 0.2.0; with files: one more line
                 if (!split[1] && !hv.hasFiles()) {
@@ -1463,6 +1469,9 @@ function controlBoxFactory() {
                     control.info(tr('cherryPicked', d.from, d.to));
                 }
             });
+            if (result.edit) {
+                this.info(tr('stoppedEdit', result.edit.id, result.edit.message || ''));
+            }
             if (result.conflicts) {
                 result.conflicts.forEach(function (p) { control.info(tr('conflictIn', p)); });
                 this.info(tr('stoppedAt', result.at.id, result.at.message || ''));
@@ -1915,6 +1924,8 @@ function controlBoxFactory() {
                     opt.updateRefs = true;
                 } else if (arg === '--autosquash') {
                     opt.autosquash = true;
+                } else if (arg === '-i' || arg === '--interactive') {
+                    opt.interactive = true;
                 } else if (arg.charAt(0) !== '-') {
                     positional.push(arg);
                 }
@@ -1940,13 +1951,76 @@ function controlBoxFactory() {
             }
 
             result = this.historyView.rebase(ref, opt);
-            if (result && result.done) {
+            if (result && result.todo) {
+                this._printTodo();
+                this.info(tr('todoHint'));
+            } else if (result && result.done) {
                 this._printSequence('rebase', result);
             } else if (result === 'Fast-Forward') {
                 this.info(tr('fastForwardTo', opt.onto || ref));
             } else if (result === 'Up-To-Date') {
                 this.info(tr('upToDate'));
             }
+        },
+
+        _todoLine: function (words) {
+            var hv = this.historyView, op = hv.operation, control = this, todo = op.todo,
+                ACTIONS = { pick: 'rebase', p: 'rebase', reword: 'reword', r: 'reword', edit: 'edit', e: 'edit',
+                    squash: 'squash', s: 'squash', fixup: 'fixup', f: 'fixup', drop: 'drop', d: 'drop' },
+                find = function (c) {
+                    var i = /^\d+$/.test(c || '') ? Number(c) - 1 : -1,
+                        commit = c && !/^\d+$/.test(c) && hv.getCommit(c);
+                    if (i < 0 || i >= todo.length) {
+                        i = todo.map(function (t) { return t.id; }).indexOf(commit ? commit.id : null);
+                    }
+                    if (i < 0) {
+                        throw new Error(tr('noRef', c || ''));
+                    }
+                    return i;
+                },
+                before = function (i) {
+                    return todo.slice(0, i).some(function (t) { return t.kind !== 'drop'; });
+                };
+
+            if (words[0] === ':q!' || (words[0] === 'git' && words[1] === 'rebase' && words[2] === '--abort')) {
+                hv.operation = null;
+                return this.info(tr('todoCancelled'));
+            }
+            if (words[0] === ':wq') {
+                this._resolved = ['git', 'rebase', '--continue'];
+                var result = hv.runTodo();
+                return result.empty ? this.info(tr('todoCancelled')) : this._printSequence('rebase', result);
+            }
+            if (words[0] === 'move') {
+                var from = find(words[1]), to = Number(words[2]) - 1;
+                if (!(to >= 0 && to < todo.length)) {
+                    throw new Error(tr('todoUsage'));
+                }
+                var item = todo.splice(from, 1)[0];
+                todo.splice(to, 0, item);
+            } else if (ACTIONS[words[0]]) {
+                var i = find(words[1]), kind = ACTIONS[words[0]];
+                if ((kind === 'squash' || kind === 'fixup') && !before(i)) {
+                    throw new Error(tr('todoNothingBefore', words[0]));
+                }
+                if (kind === 'reword' && !words.slice(2).join(' ')) {
+                    throw new Error(tr('rewordNeedsMessage'));
+                }
+                todo[i].kind = kind;
+                todo[i].message = kind === 'reword' ? words.slice(2).join(' ') : undefined;
+            } else {
+                throw new Error(tr('todoOpen'));
+            }
+            this._printTodo();
+        },
+
+        _printTodo: function () {
+            var hv = this.historyView, control = this, names = { rebase: 'pick' };
+            hv.operation.todo.forEach(function (t) {
+                var c = hv.getCommit(t.id);
+                control.plain((names[t.kind] || t.kind) + ' ' + t.id + ' ' + (t.message || c.message || ''));
+            });
+            hv.highlight(hv.operation.todo.map(function (t) { return t.id; }));
         },
 
         // remote [-v] | add <name> <url> | rename <old> <new> | remove <name> | show <name>
@@ -4318,13 +4392,43 @@ function historyViewFactory(d3) {
 
             this.operation = {
                 type: 'rebase',
-                todo: this._todo(toRebase, opt.autosquash),
+                todo: opt.todo || this._todo(toRebase, opt.autosquash),
                 orig: orig,
                 before: before,
                 updateRefs: !!opt.updateRefs,
                 map: {}
             };
             return this._continueSequence();
+        },
+
+        // rebase -i: the todo stays open until :wq / :q!; nothing changes before
+        _openTodo: function (base, toRebase, opt) {
+            if (this.operation) {
+                throw new Error(tr('operationInProgress', this.operation.type));
+            }
+            if (this.fileStatus().some(function (f) { return f.x !== '?'; })) {
+                throw new Error(tr('dirtyRebase'));
+            }
+            this.operation = { type: 'rebase-todo', todo: this._todo(toRebase, opt.autosquash), base: base.id, updateRefs: !!opt.updateRefs };
+            return { todo: this.operation.todo };
+        },
+
+        runTodo: function () {
+            var op = this.operation,
+                items = op.todo.filter(function (t) { return t.kind !== 'drop'; });
+            if (items[0] && (items[0].kind === 'squash' || items[0].kind === 'fixup')) {
+                throw new Error(tr('todoNothingBefore', items[0].kind));
+            }
+            this.operation = null;
+            if (!items.length) {
+                return { empty: true };
+            }
+            try {
+                return this._rebaseFiles(this.getCommit(op.base), null, { updateRefs: op.updateRefs, todo: items });
+            } catch (e) {
+                this.operation = op;
+                throw e;
+            }
         },
 
         // the rebase todo, oldest first; with autosquash "fixup! <subject>" / "squash! <subject>"
@@ -4366,6 +4470,10 @@ function historyViewFactory(d3) {
                     return { conflicts: result.conflicts, at: commit, done: done };
                 }
                 done.push(this._commitStep(item));
+                if (item.kind === 'edit') {
+                    // stop to amend or split this commit; rebase --continue goes on
+                    return { edit: this.getCommit('HEAD'), done: done };
+                }
             }
             this._finishSequence();
             return { done: done };
@@ -4392,7 +4500,7 @@ function historyViewFactory(d3) {
                 commit.reverted = true;
                 this.commit({ reverts: commit.id }, message || 'Revert "' + (commit.message || commit.id) + '"');
             } else {
-                this.commit({ rebased: true, author: commit.author }, message || commit.message);
+                this.commit({ rebased: true, author: commit.author }, message || item.message || commit.message);
                 this.operation.map[commit.id] = this.getCommit('HEAD').id;
             }
             return { from: commit.id, to: this.getCommit('HEAD').id };
@@ -4437,6 +4545,9 @@ function historyViewFactory(d3) {
             if (op.current) {
                 done.push(this._commitStep(op.current));
                 op.current = null;
+            } else if (changedPaths(this.headTree(), this.index).length) {
+                // stopped by edit: staged changes belong in a commit first
+                throw new Error(tr('stagedOnContinue'));
             }
             var result = this._continueSequence();
             result.done = done.concat(result.done);
@@ -4514,7 +4625,7 @@ function historyViewFactory(d3) {
                 throw new Error(tr('noRef', opt.onto));
             }
 
-            if (!opt.onto && !opt.autosquash) {
+            if (!opt.onto && !opt.autosquash && !opt.interactive) {
                 if (this.isAncestor(upstream, currentCommit)) {
                     return 'Up-To-Date';
                 }
@@ -4531,8 +4642,14 @@ function historyViewFactory(d3) {
             }
 
             if (toRebase.length === 0) {
+                if (opt.interactive && base.id === this.getCommit('HEAD').id) {
+                    return 'Up-To-Date';
+                }
                 this._fastForwardFiles(base);
                 return 'Fast-Forward';
+            }
+            if (opt.interactive) {
+                return this._openTodo(base, toRebase, opt);
             }
 
             if (this.hasFiles() || opt.autosquash) {

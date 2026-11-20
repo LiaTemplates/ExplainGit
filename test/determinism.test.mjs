@@ -26,6 +26,7 @@ export const SCRIPTS = [
   { name: 'reflog', cmds: ['git commit -m a', 'git commit -m lost', 'git reset --hard HEAD~', 'git branch rescue HEAD@{1}', 'git reflog', 'git log -g'] },
   { name: 'gc', cmds: ['git commit -m a', 'git commit -m lost', 'git reset --hard HEAD~', 'git fsck --no-reflogs', 'git reflog expire --expire=now --all', 'git gc --prune=now'] },
   { name: 'tags', opts: { origin: true }, cmds: ['git commit -m a', 'git tag -a v1 -m one', 'git commit -m b', 'git tag v2', 'git push --follow-tags', 'git describe', 'git tag -d v2'] },
+  { name: 'branch info and alias', opts: { origin: true }, cmds: ['git commit -m a', 'git push', 'git commit -m b', 'git branch -vv', 'git config alias.co checkout', 'git co -b dev', 'git branch --merged master'] },
 ]
 
 // graph, file contents, index and working tree; also in another language

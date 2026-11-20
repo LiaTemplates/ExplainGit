@@ -372,8 +372,23 @@ function controlBoxFactory() {
                 }
             }
 
+            // git aliases (config alias.<name>); git's own commands cannot be replaced
+            var command = function (name) { return name === 'log' ? 'gitLog' : name; },
+                rounds = 0;
+            while (split[1] && !Object.prototype.hasOwnProperty.call(ControlBox.prototype, command(split[1])) &&
+                   hv.config['alias.' + split[1]] !== undefined) {
+                var value = hv.config['alias.' + split[1]];
+                if (value.charAt(0) === '!') {
+                    throw new Error(tr('aliasShell'));
+                }
+                if (++rounds > 10) {
+                    throw new Error(tr('aliasLoop', split[1]));
+                }
+                split = ['git'].concat(tokenize(value), split.slice(2));
+            }
+
             // `log` is the console element of this object, so git log runs as gitLog
-            var method = split[1] === 'log' ? 'gitLog' : split[1],
+            var method = command(split[1]),
                 args = split.slice(2);
 
             // only git commands, not the widget's own methods
@@ -466,15 +481,17 @@ function controlBoxFactory() {
 
             switch (flag) {
             case undefined:
-                this.info(tr('branchList'));
-                break;
+            case '--list':
+            case '-v':
+            case '-vv':
+            case '--verbose':
+            case '--merged':
+            case '--no-merged':
             case '--remote':
             case '-r':
-                this.info(tr('branchRemote'));
-                break;
             case '--all':
             case '-a':
-                this.info(tr('branchAll'));
+                this._listBranches(args);
                 break;
             case '--delete':
             case '-d':
@@ -515,6 +532,57 @@ function controlBoxFactory() {
                 } else {
                     hv.branch(flag, rest[0]);
                 }
+            }
+        },
+
+        // branch [-v | -vv] [-a | -r] [--merged | --no-merged [<rev>]]
+        _listBranches: function (args) {
+            var hv = this.historyView, control = this,
+                has = function (f) { return args.indexOf(f) > -1; },
+                verbose = has('-vv') ? 2 : has('-v') || has('--verbose') ? 1 : 0,
+                filter = has('--merged') ? 'merged' : has('--no-merged') ? 'noMerged' : null,
+                rev = args.filter(function (a) { return a.charAt(0) !== '-'; })[0] || 'HEAD',
+                names = Object.keys(hv.refSnapshot().branches).sort(),
+                remotes = [];
+            hv.commitData.forEach(function (c) {
+                c.tags.forEach(function (t) {
+                    if (hv.isRemoteRef(t) && remotes.indexOf(t) === -1) {
+                        remotes.push(t);
+                    }
+                });
+            });
+            remotes.sort();
+            if (filter) {
+                if (!hv.getCommit(rev)) {
+                    throw new Error(tr('noRef', rev));
+                }
+                names = names.filter(function (b) { return hv.isAncestor(b, rev) === (filter === 'merged'); });
+            }
+            var width = names.reduce(function (w, b) { return Math.max(w, b.length); }, 0),
+                line = function (b) {
+                    var mark = b === hv.currentBranch ? '* ' : '  ';
+                    if (!verbose) {
+                        return mark + b;
+                    }
+                    var c = hv.getCommit(b), extra = '';
+                    if (verbose === 2) {
+                        var u = hv.upstream[b] || ('origin/' + b);
+                        if (hv.getCommit(u)) {
+                            var ahead = hv.revList([b], [u]).length, behind = hv.revList([u], [b]).length,
+                                parts = (ahead ? ['ahead ' + ahead] : []).concat(behind ? ['behind ' + behind] : []);
+                            extra = '[' + u + (parts.length ? ': ' + parts.join(', ') : '') + '] ';
+                        }
+                    }
+                    return mark + (b + new Array(width + 1).join(' ')).slice(0, width) + ' ' + c.id + ' ' + extra + (c.message || '');
+                };
+            if (!has('-r') && !has('--remote')) {
+                names.forEach(function (b) { control.plain(line(b)); });
+            }
+            if (has('-a') || has('--all')) {
+                remotes.forEach(function (r) { control.plain('  remotes/' + r); });
+            }
+            if (has('-r') || has('--remote')) {
+                remotes.forEach(function (r) { control.plain('  ' + r); });
             }
         },
 

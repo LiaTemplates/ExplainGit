@@ -147,6 +147,8 @@ const TEXT = {
     noNames: 'No names found, cannot describe anything.',
     noAnnotated: 'No annotated tags can describe this commit; try --tags.',
     wrongTagKind: t => `Tag "${t}" is not of the right kind yet (annotated or lightweight).`,
+    aliasShell: 'Aliases that start with ! run shell commands, which this demo cannot do.',
+    aliasLoop: a => `The alias ${a} keeps calling itself.`,
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -290,6 +292,8 @@ const TEXT = {
     noNames: 'Keine Namen gefunden, kann nichts beschreiben.',
     noAnnotated: 'Kein annotiertes Tag beschreibt diesen Commit; versuche --tags.',
     wrongTagKind: t => `Tag „${t}“ hat noch nicht die richtige Art (annotiert oder leichtgewichtig).`,
+    aliasShell: 'Aliase mit ! starten Shell-Befehle, das kann diese Demo nicht.',
+    aliasLoop: a => `Der Alias ${a} ruft sich immer wieder selbst auf.`,
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -433,6 +437,8 @@ const TEXT = {
     noNames: 'Імен не знайдено, неможливо нічого описати.',
     noAnnotated: 'Жоден анотований тег не описує цей коміт; спробуйте --tags.',
     wrongTagKind: t => `Тег «${t}» ще не того типу (анотований чи легкий).`,
+    aliasShell: 'Псевдоніми з ! запускають команди оболонки, цього демонстрація не вміє.',
+    aliasLoop: a => `Псевдонім ${a} викликає сам себе.`,
     upToDate: 'Уже актуально.'
   }
 }

@@ -38,10 +38,6 @@ const TEXT = {
     detachedHead: 'Current Branch: DETACHED HEAD',
     // console messages
     unknown: "I don't understand that.",
-    branchList: "You need to give a branch name. Normally if you don't give a name, this command will list your local branches on the screen.",
-    branchRemote: 'This command normally displays all of your remote tracking branches.',
-    branchAll: 'This command normally displays all of your tracking branches, both remote and local.',
-    tagList: "You need to give a tag name. Normally if you don't give a name, this command will list your local tags on the screen.",
     clean: 'Deleting all of your untracked files...',
     noFFOnly: 'This demo only supports the --no-ff switch.',
     fastForward: 'You have performed a fast-forward merge.',
@@ -149,6 +145,7 @@ const TEXT = {
     wrongTagKind: t => `Tag "${t}" is not of the right kind yet (annotated or lightweight).`,
     aliasShell: 'Aliases that start with ! run shell commands, which this demo cannot do.',
     aliasLoop: a => `The alias ${a} keeps calling itself.`,
+    needNumber: 'A number is missing.',
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -183,10 +180,6 @@ const TEXT = {
     currentBranch: b => `Aktueller Branch: ${b}`,
     detachedHead: 'Aktueller Branch: losgelöster HEAD',
     unknown: 'Das verstehe ich nicht.',
-    branchList: 'Gib einen Branch-Namen an. Ohne Namen listet dieser Befehl normalerweise deine lokalen Branches auf.',
-    branchRemote: 'Dieser Befehl zeigt normalerweise alle Remote-Tracking-Branches an.',
-    branchAll: 'Dieser Befehl zeigt normalerweise alle Tracking-Branches an, lokale und entfernte.',
-    tagList: 'Gib einen Tag-Namen an. Ohne Namen listet dieser Befehl normalerweise deine lokalen Tags auf.',
     clean: 'Alle nicht versionierten Dateien werden gelöscht …',
     noFFOnly: 'Diese Demo unterstützt nur die Option --no-ff.',
     fastForward: 'Das war ein Fast-Forward-Merge.',
@@ -294,6 +287,7 @@ const TEXT = {
     wrongTagKind: t => `Tag „${t}“ hat noch nicht die richtige Art (annotiert oder leichtgewichtig).`,
     aliasShell: 'Aliase mit ! starten Shell-Befehle, das kann diese Demo nicht.',
     aliasLoop: a => `Der Alias ${a} ruft sich immer wieder selbst auf.`,
+    needNumber: 'Es fehlt eine Zahl.',
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -328,10 +322,6 @@ const TEXT = {
     currentBranch: b => `Поточна гілка: ${b}`,
     detachedHead: 'Поточна гілка: від’єднаний HEAD',
     unknown: 'Я цього не розумію.',
-    branchList: 'Вкажіть назву гілки. Без назви ця команда зазвичай показує ваші локальні гілки.',
-    branchRemote: 'Ця команда зазвичай показує всі гілки віддаленого відстеження.',
-    branchAll: 'Ця команда зазвичай показує всі гілки відстеження, локальні й віддалені.',
-    tagList: 'Вкажіть назву тегу. Без назви ця команда зазвичай показує ваші локальні теги.',
     clean: 'Видалення всіх невідстежуваних файлів…',
     noFFOnly: 'Ця демонстрація підтримує лише параметр --no-ff.',
     fastForward: 'Ви виконали fast-forward злиття.',
@@ -439,6 +429,7 @@ const TEXT = {
     wrongTagKind: t => `Тег «${t}» ще не того типу (анотований чи легкий).`,
     aliasShell: 'Псевдоніми з ! запускають команди оболонки, цього демонстрація не вміє.',
     aliasLoop: a => `Псевдонім ${a} викликає сам себе.`,
+    needNumber: 'Бракує числа.',
     upToDate: 'Уже актуально.'
   }
 }

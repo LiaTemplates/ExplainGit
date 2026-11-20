@@ -148,6 +148,17 @@ export function viewInfo(hv) {
 const treeKey = tree => Object.keys(tree || {}).sort().map(p => p + ':' + blobId(tree[p])).join(',')
 
 export function encode(starts, withTrees) {
+  // commits reachable through parents; copy sources (cherry-pick, squash, revert) count only
+  // when reachable, so a gc that removed an unreachable source changes nothing
+  const reachable = new Set()
+  const walk = (id, byId) => {
+    while (id && byId[id] && !reachable.has(id)) {
+      reachable.add(id)
+      walk(byId[id].parent2, byId)
+      id = byId[id].parent
+    }
+  }
+  starts.forEach(([, id, byId]) => walk(id, byId))
   const num = new Map()
   const nodes = []
   const visit = (id, byId) => {
@@ -156,8 +167,8 @@ export function encode(starts, withTrees) {
     const n = num.size
     num.set(id, n)
     const c = byId[id]
-    // where a commit was copied from counts too: cherry-pick, squash and revert differ from a plain commit
-    nodes[n] = [c.parent, c.parent2, c.cherryPickedFrom, c.squashOf, c.reverts].map(id => visit(id, byId))
+    const copy = id => (!id ? '-' : reachable.has(id) ? visit(id, byId) : 'x')
+    nodes[n] = [visit(c.parent, byId), visit(c.parent2, byId), copy(c.cherryPickedFrom), copy(c.squashOf), copy(c.reverts)]
     if (withTrees) nodes[n].push(treeKey(c.tree))
     return n
   }
@@ -224,8 +235,9 @@ export function compare(actual, expected, { status = true, files = false } = {})
   }
   if (problems.length) return problems
 
+  // an annotated tag where a lightweight one is expected is fine, not the other way round
   for (const [t, kind] of Object.entries(expected[0][1].tags || {}))
-    if ((actual[0][1].tags || {})[t] !== kind) return [tr('wrongTagKind', t)]
+    if (kind === 'annotated' && (actual[0][1].tags || {})[t] !== kind) return [tr('wrongTagKind', t)]
   if (status && actual[0][1].status !== expected[0][1].status) return [tr('wrongStatus')]
   if (files) {
     const fa = actual[0][1].files, fe = expected[0][1].files

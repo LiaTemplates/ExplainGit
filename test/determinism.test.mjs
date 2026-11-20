@@ -30,7 +30,10 @@ export const SCRIPTS = [
 ]
 
 // graph, file contents, index and working tree; also in another language
-const result = box => ({ graph: graph(box), index: box.hv.index, work: box.hv.work })
+const result = box => ({
+  graph: graph(box), index: box.hv.index, work: box.hv.work, reflog: box.hv.reflog,
+  selected: box.hv.svg.selectAll('circle.selected').data().map(d => d.id)
+})
 for (const { name, cmds, opts } of SCRIPTS) {
   test(`replay is identical: ${name}`, () => assert.deepEqual(result(run(cmds, opts).box), result(run(cmds, opts).box)))
   test(`replay does not depend on the language: ${name}`, () =>

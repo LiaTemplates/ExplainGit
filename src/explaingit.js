@@ -74,6 +74,29 @@ function controlBoxFactory() {
     // shell commands on the working tree
     var SHELL = ['echo', 'cat', 'ls', 'rm', 'mv'];
 
+    // * and ? wildcards in linear time (a RegExp of many .* can take hours)
+    var globMatch = function (pattern, text) {
+        var p = 0, i = 0, star = -1, mark = 0;
+        while (i < text.length) {
+            if (p < pattern.length && (pattern.charAt(p) === '?' || pattern.charAt(p) === text.charAt(i))) {
+                p++;
+                i++;
+            } else if (p < pattern.length && pattern.charAt(p) === '*') {
+                star = p++;
+                mark = i;
+            } else if (star > -1) {
+                p = star + 1;
+                i = ++mark;
+            } else {
+                return false;
+            }
+        }
+        while (pattern.charAt(p) === '*') {
+            p++;
+        }
+        return p === pattern.length;
+    };
+
     // shell words: "quoted text" stays one word (quotes removed), > and >> are words of their own
     var tokenize = function (line) {
         var words = [], word = null, quote = null, i, ch;
@@ -239,6 +262,8 @@ function controlBoxFactory() {
 
             var split = entry.split(/\s+/);
             this._entry = entry;
+            this._resolved = null;
+            this._reflogDone = false;
             if (this.historyView && this.historyView.svg) {
                 this.historyView.highlight([]);
             }
@@ -266,8 +291,12 @@ function controlBoxFactory() {
                 var msg = (ex && ex.message) ? ex.message: null;
                 this.error(msg);
             }
-            if (before) {
-                this._recordReflog(before, split);
+            if (before && !this._reflogDone) {
+                try {
+                    this._recordReflog(before, this._resolved || split);
+                } catch (ex) {
+                    this.error(ex && ex.message);
+                }
             }
             if (this.historyView && this.historyView.svg) {
                 this.historyView.showStatus();
@@ -365,9 +394,13 @@ function controlBoxFactory() {
                 }
                 var back = hv.worktrees[hv.active].path;
                 hv.activate(split[2]);
+                var inner = hv.refSnapshot();
                 try {
                     return this._run(['git'].concat(split.slice(3)));
                 } finally {
+                    // the reflog of the other worktree, written while it is active
+                    this._recordReflog(inner, this._resolved || split.slice(2));
+                    this._reflogDone = true;
                     hv.activate(back);
                 }
             }
@@ -390,6 +423,7 @@ function controlBoxFactory() {
             // `log` is the console element of this object, so git log runs as gitLog
             var method = command(split[1]),
                 args = split.slice(2);
+            this._resolved = split;
 
             // only git commands, not the widget's own methods
             if (Object.prototype.hasOwnProperty.call(ControlBox.prototype, method) &&
@@ -729,10 +763,8 @@ function controlBoxFactory() {
                 return hv.renderTags();
             }
             if (list || !pos.length) {
-                var pattern = new RegExp('^' + (list && pos[0] ? pos[0] : '*').split('*').map(function (part) {
-                    return part.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-                }).join('.*') + '$');
-                return hv.tagNames().filter(function (t) { return pattern.test(t); }).forEach(function (t) { control.plain(t); });
+                var pattern = list && pos[0] ? pos[0] : '*';
+                return hv.tagNames().filter(function (t) { return globMatch(pattern, t); }).forEach(function (t) { control.plain(t); });
             }
             var target = hv.getCommit(pos[1] || 'HEAD');
             if (!target || target.id === ROOT) {
@@ -1336,6 +1368,9 @@ function controlBoxFactory() {
                     o.max = Number(n[1]);
                 } else if (a === '-n' || a === '--max-count') {
                     o.max = Number(opts.shift());
+                    if (isNaN(o.max)) {
+                        throw new Error(tr('needNumber'));
+                    }
                 } else if (a === '-S') {
                     o.pickaxe = opts.shift();
                 } else if (a === '--not') {
@@ -1434,24 +1469,31 @@ function controlBoxFactory() {
             var hv = this.historyView,
                 after = hv.refSnapshot(),
                 msg = this._reflogMessage(split, before, after),
-                rebasing = hv.operation && hv.operation.type === 'rebase' ? hv.operation.orig.branch : null;
+                rebasing = hv.operation && hv.operation.type === 'rebase' ? hv.operation.orig.branch : null,
+                created = Object.keys(after.branches).filter(function (b) { return before.branches[b] === undefined; }),
+                removed = Object.keys(before.branches).filter(function (b) { return after.branches[b] === undefined; }),
+                renaming = split[1] === 'branch' && /^-(m|M|-move)$/.test(split[2] || '');
             if (before.active === after.active && (before.head !== after.head || before.branch !== after.branch)) {
                 hv.addReflog('HEAD', after.head, msg);
             }
+            if (renaming && created.length === 1 && removed.length === 1) {
+                // branch -m: the log moves with the branch
+                hv.reflog[created[0]] = (hv.reflog[removed[0]] || []).slice();
+                hv.addReflog(created[0], after.branches[created[0]], 'Branch: renamed refs/heads/' + removed[0] + ' to refs/heads/' + created[0]);
+                delete hv.reflog[removed[0]];
+                return;
+            }
+            created.forEach(function (b) {
+                var at = split.indexOf(b), start = at > -1 && split[at + 1] && split[at + 1].charAt(0) !== '-' ? split[at + 1] : 'HEAD';
+                hv.addReflog(b, after.branches[b], 'branch: Created from ' + start);
+            });
             Object.keys(after.branches).forEach(function (b) {
-                if (before.branches[b] === undefined) {
-                    var start = split[1] === 'branch' && split[2] === b && split[3] ? split[3] : 'HEAD';
-                    hv.addReflog(b, after.branches[b], 'branch: Created from ' + start);
-                } else if (before.branches[b] !== after.branches[b] && b !== rebasing) {
+                if (before.branches[b] !== undefined && before.branches[b] !== after.branches[b] && b !== rebasing) {
                     // like git: a rebased branch moves once, when the rebase finishes
-                    hv.addReflog(b, after.branches[b], msg);
+                    hv.addReflog(b, after.branches[b], split[1] === 'branch' ? 'branch: Reset to ' + (split[4] || 'HEAD') : msg);
                 }
             });
-            Object.keys(before.branches).forEach(function (b) {
-                if (after.branches[b] === undefined) {
-                    delete hv.reflog[b];
-                }
-            });
+            removed.forEach(function (b) { delete hv.reflog[b]; });
         },
 
         _reflogMessage: function (split, before, after) {
@@ -1459,7 +1501,8 @@ function controlBoxFactory() {
                 head = hv.getCommit('HEAD'),
                 sub = split[0] === 'git' ? split[1] : split[0],
                 args = split.slice(2).filter(function (a) { return a.charAt(0) !== '-'; }),
-                merged = head.parent2 && head.id !== before.head ? "Merge made by the 'ort' strategy." : 'Fast-forward';
+                merged = head.parent2 && head.id !== before.head ? "Merge made by the 'ort' strategy." : 'Fast-forward',
+                returning = 'returning to refs/heads/' + (after.branch || after.head);
             switch (sub) {
             case 'commit':
                 return (split.indexOf('--amend') > -1 ? 'commit (amend): ' : head.parent2 ? 'commit (merge): ' : 'commit: ') + (head.message || '');
@@ -1469,12 +1512,20 @@ function controlBoxFactory() {
             case 'reset':
                 return 'reset: moving to ' + (args[0] || 'HEAD');
             case 'merge':
-                return 'merge ' + args[0] + ': ' + merged;
+                // the merged branch: the last argument that names a commit (not the -m text)
+                return 'merge ' + args.filter(function (a) { return hv.getCommit(a); }).pop() + ': ' + merged;
             case 'pull':
-                return 'pull: ' + merged;
+                return split.indexOf('--rebase') > -1 ? 'pull --rebase (finish): ' + returning : 'pull: ' + merged;
             case 'rebase':
-                return hv.operation ? 'rebase (pick): ' + (head.message || '')
-                    : 'rebase (finish): returning to refs/heads/' + (after.branch || after.head);
+                if (split.indexOf('--abort') > -1) {
+                    return 'rebase (abort): ' + returning;
+                }
+                if (hv.operation) {
+                    return split.indexOf('--continue') > -1 || split.indexOf('--skip') > -1
+                        ? 'rebase (continue): ' + (head.message || '')
+                        : 'rebase (start): checkout ' + (args[args.length - 1] || 'HEAD');
+                }
+                return 'rebase (finish): ' + returning;
             case 'cherry-pick':
             case 'revert':
                 return sub + ': ' + (head.message || '');
@@ -1524,11 +1575,19 @@ function controlBoxFactory() {
             }
             var
                 rest = args[0] === 'show' ? args.slice(1) : args,
-                ref = rest.filter(function (a) { return a.charAt(0) !== '-'; })[0] || 'HEAD';
+                ref = rest.filter(function (a) { return a.charAt(0) !== '-' && !/^\d+$/.test(a); })[0] || 'HEAD';
             if (ref !== 'HEAD' && !hv.reflog[ref]) {
                 throw new Error(tr('noRef', ref));
             }
-            hv.reflogFor(ref).forEach(function (e, i) {
+            var max = Infinity;
+            rest.forEach(function (a, i) {
+                if (/^-\d+$/.test(a)) {
+                    max = Number(a.slice(1));
+                } else if (a === '-n') {
+                    max = Number(rest[i + 1]);
+                }
+            });
+            hv.reflogFor(ref).slice(0, max).forEach(function (e, i) {
                 control.plain(e.id + ' ' + ref + '@{' + i + '}: ' + e.msg);
             });
         },
@@ -1574,7 +1633,7 @@ function controlBoxFactory() {
                 return c;
             });
             commits.forEach(function (c, i) {
-                control.plain(abbrev && refs[i] === 'HEAD' && hv.currentBranch ? hv.currentBranch : c.id);
+                control.plain(abbrev && refs[i] === 'HEAD' ? hv.currentBranch || 'HEAD' : c.id);
             });
         },
 
@@ -1647,6 +1706,12 @@ function controlBoxFactory() {
                 throw new Error(tr('operationInProgress', hv.operation.type));
             }
 
+            var m = args.indexOf('-m');
+            if (m > -1) {
+                var rest = args.slice(m + 1);
+                opt.message = takeMessage(rest, ['--no-ff', '--ff-only', '--squash']);
+                args = args.slice(0, m).concat(rest);
+            }
             args.forEach(function (arg) {
                 if (arg === '--no-ff') {
                     opt.noFF = true;
@@ -1688,7 +1753,7 @@ function controlBoxFactory() {
                 throw new Error(tr('notFastForward'));
             }
 
-            var result = hv.merge(branch, opt.noFF),
+            var result = hv.merge(branch, opt.noFF, opt.message),
                 control = this;
 
             if (result === 'Fast-Forward') {
@@ -2316,11 +2381,12 @@ function historyViewFactory(d3) {
         this.index = {};                // files of the active worktree: path -> lines
         this.work = {};
         this.stashes = [];      // commit ids, newest first
-        this.config = {};       // git config of this repository
-        this.tagInfo = {};      // annotated tags: name -> {message}
-        this.reflog = {};       // ref -> [{id, msg}], newest first; HEAD per worktree
+        // maps keyed by names people type: no prototype, so `constructor` is just a name
+        this.config = Object.create(null);  // git config of this repository
+        this.tagInfo = Object.create(null); // annotated tags: name -> {message}
+        this.reflog = Object.create(null);  // ref -> [{id, msg}], newest first; HEAD per worktree
         this.operation = null;  // merge/cherry-pick/revert/rebase that stopped at a conflict
-        this.upstream = {};     // branch -> remote tracking branch, set by push -u / branch -u
+        this.upstream = Object.create(null); // branch -> remote tracking branch, set by push -u / branch -u
         // worktrees: the active one lives in currentBranch, HEAD and status
         this.worktrees = [{ path: '.', branch: this.currentBranch, head: null, status: 'clean' }];
         this.active = 0;
@@ -3060,7 +3126,7 @@ function historyViewFactory(d3) {
                 return branch ? this.getCommit(this.upstream[branch] || 'origin/' + branch) : null;
             }
             if (/^\d+$/.test(spec)) {
-                var entry = this.reflogFor(name || 'HEAD')[Number(spec)];
+                var entry = this.reflogFor(name || this.currentBranch || 'HEAD')[Number(spec)];
                 return entry ? this.getCommit(entry.id) : null;
             }
             return null;
@@ -3079,7 +3145,7 @@ function historyViewFactory(d3) {
         },
 
         refSnapshot: function () {
-            var view = this, branches = {}, head = this.getCommit('HEAD');
+            var view = this, branches = Object.create(null), head = this.getCommit('HEAD');
             this.commitData.forEach(function (c) {
                 c.tags.forEach(function (t) {
                     if (view.isLocalBranch(t)) {
@@ -3112,14 +3178,22 @@ function historyViewFactory(d3) {
                 }
             });
             this.worktrees.forEach(function (w, i) { todo.push(view.getCommit(view.worktreeHead(i))); });
-            if (this.operation) {
-                var op = this.operation;
-                todo.push(this.getCommit(op.theirs), op.orig && this.getCommit(op.orig.head), op.current && this.getCommit(op.current.id));
-                (op.todo || []).forEach(function (item) { todo.push(view.getCommit(item.id)); });
-            }
-            if (this.squashPending) {
-                todo.push(this.getCommit(this.squashPending));
-            }
+            // a stopped merge/cherry-pick/rebase (also in another worktree) and a pending squash
+            var keepOperation = function (op, squash) {
+                if (op) {
+                    todo.push(view.getCommit(op.theirs), op.orig && view.getCommit(op.orig.head), op.current && view.getCommit(op.current.id));
+                    (op.todo || []).forEach(function (item) { todo.push(view.getCommit(item.id)); });
+                }
+                if (squash) {
+                    todo.push(view.getCommit(squash));
+                }
+            };
+            keepOperation(this.operation, this.squashPending);
+            this.worktrees.forEach(function (w, i) {
+                if (i !== view.active) {
+                    keepOperation(w.operation, w.squash);
+                }
+            });
             if (opt && opt.reflog) {
                 var logs = Object.keys(this.reflog).map(function (r) { return view.reflog[r]; })
                     .concat(this.worktrees.map(function (w) { return w.reflogHead || []; }));
@@ -3843,8 +3917,9 @@ function historyViewFactory(d3) {
             }
         },
 
-        merge: function (ref, noFF) {
+        merge: function (ref, noFF, message) {
             var mergeTarget = this.getCommit(ref),
+                text = message || "Merge branch '" + ref + "'",
                 currentCommit = this.getCommit('HEAD');
 
             if (!mergeTarget) {
@@ -3861,21 +3936,21 @@ function historyViewFactory(d3) {
                     this.fastForward(mergeTarget);
                     return 'Fast-Forward';
                 }
-                return this._mergeFiles(mergeTarget, ref, noFF, currentCommit);
+                return this._mergeFiles(mergeTarget, ref, noFF, currentCommit, text);
             }
             if (noFF === true) {
                 this._markNoFF(mergeTarget, currentCommit);
-                this.commit({parent2: mergeTarget.id, isNoFFCommit: true});
+                this.commit({parent2: mergeTarget.id, isNoFFCommit: true}, text);
             } else if (this.isAncestor(currentCommit, mergeTarget)) {
                 this.fastForward(mergeTarget);
                 return 'Fast-Forward';
             } else {
-                this.commit({parent2: mergeTarget.id});
+                this.commit({parent2: mergeTarget.id}, text);
             }
         },
 
         // three-way merge of the files; stops with an operation when files conflict
-        _mergeFiles: function (target, label, noFF, currentCommit) {
+        _mergeFiles: function (target, label, noFF, currentCommit, text) {
             var before = { index: clone(this.index), work: clone(this.work) },
                 base = this.mergeBase('HEAD', target.id),
                 result = this._threeWay(base ? base.tree : {}, target.tree, label);
@@ -3886,7 +3961,7 @@ function historyViewFactory(d3) {
             if (noFF === true) {
                 this._markNoFF(target, currentCommit);
             }
-            this.commit({ parent2: target.id, isNoFFCommit: noFF === true || undefined, tree: clone(result.tree) }, "Merge branch '" + label + "'");
+            this.commit({ parent2: target.id, isNoFFCommit: noFF === true || undefined, tree: clone(result.tree) }, text || "Merge branch '" + label + "'");
         },
 
         // apply the change base -> theirs onto HEAD in index and working tree; conflicts are marked

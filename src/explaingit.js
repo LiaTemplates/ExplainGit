@@ -1973,9 +1973,10 @@ function controlBoxFactory() {
                 ACTIONS = { pick: 'rebase', p: 'rebase', reword: 'reword', r: 'reword', edit: 'edit', e: 'edit',
                     squash: 'squash', s: 'squash', fixup: 'fixup', f: 'fixup', drop: 'drop', d: 'drop' },
                 find = function (c) {
-                    var i = /^\d+$/.test(c || '') ? Number(c) - 1 : -1,
-                        commit = c && !/^\d+$/.test(c) && hv.getCommit(c);
+                    var i = /^\d+$/.test(c || '') ? Number(c) - 1 : -1, commit;
+                    // a line number first; an id may be all digits too
                     if (i < 0 || i >= todo.length) {
+                        commit = c && hv.getCommit(c);
                         i = todo.map(function (t) { return t.id; }).indexOf(commit ? commit.id : null);
                     }
                     if (i < 0) {
@@ -4084,6 +4085,7 @@ function historyViewFactory(d3) {
             current.index = this.index;
             current.work = this.work;
             current.operation = this.operation;
+            current.bisect = this.bisectState;
             current.reflogHead = this.reflog.HEAD;
             current.previous = this.previousBranch;
             current.squash = this.squashPending;
@@ -4095,6 +4097,7 @@ function historyViewFactory(d3) {
             this.index = next.index || {};
             this.work = next.work || {};
             this.operation = next.operation || null;
+            this.bisectState = next.bisect || null;
             this.reflog.HEAD = next.reflogHead || [{ id: next.branch ? this.getCommit(next.branch).id : next.head, msg: 'worktree add' }];
             this.checkout(next.branch || next.head);
             this.setStatus(next.status);
@@ -4695,9 +4698,20 @@ function historyViewFactory(d3) {
         _continueSequence: function () {
             var op = this.operation, done = [];
             while (op.todo.length) {
-                var item = op.todo.shift(),
-                    commit = this.getCommit(item.id),
-                    result = this.applyCommit(commit, item.kind === 'revert', item.mainline);
+                var item = op.todo[0],
+                    commit = this.getCommit(item.id);
+                // a pick that would give the same commit again stays as it is (like git)
+                if (op.type === 'rebase' && item.kind === 'rebase' && !commit.parent2 &&
+                    commit.parent === this.getCommit('HEAD').id && !this.hasUnmerged()) {
+                    this._fastForwardFiles(commit);
+                    op.todo.shift();
+                    op.map[commit.id] = commit.id;
+                    done.push({ from: commit.id, to: commit.id });
+                    continue;
+                }
+                // a refused step (local changes) leaves the todo as it was
+                var result = this.applyCommit(commit, item.kind === 'revert', item.mainline);
+                op.todo.shift();
                 if (result.conflicts.length) {
                     op.current = item;
                     return { conflicts: result.conflicts, at: commit, done: done };
@@ -4705,6 +4719,7 @@ function historyViewFactory(d3) {
                 done.push(this._commitStep(item));
                 if (item.kind === 'edit') {
                     // stop to amend or split this commit; rebase --continue goes on
+                    op.edited = this.getCommit('HEAD').id;
                     return { edit: this.getCommit('HEAD'), done: done };
                 }
             }
@@ -4781,6 +4796,15 @@ function historyViewFactory(d3) {
             } else if (changedPaths(this.headTree(), this.index).length) {
                 // stopped by edit: staged changes belong in a commit first
                 throw new Error(tr('stagedOnContinue'));
+            } else if (op.type === 'rebase' && this.fileStatus().some(function (f) { return f.y !== ' ' && f.y !== '?'; })) {
+                // like git: unstaged changes are refused before anything happens
+                throw new Error(tr('dirtyRebase'));
+            }
+            if (op.edited) {
+                // --update-refs: branches on the edited commit go to what became of it
+                var now = this.getCommit('HEAD').id, map = op.map, edited = op.edited;
+                Object.keys(map).forEach(function (k) { if (map[k] === edited) { map[k] = now; } });
+                op.edited = null;
             }
             var result = this._continueSequence();
             result.done = done.concat(result.done);

@@ -47,5 +47,7 @@ export function unchanged(cmds, bad, opts) {
   assert.doesNotMatch(after.log.at(-1).text, /undefined/, bad)
   assert.deepEqual(graph(after.box), graph(before.box), bad)
   assert.deepEqual(strip(viewInfo(after.box.hv)), strip(viewInfo(before.box.hv)), bad)
+  const state = v => JSON.parse(JSON.stringify({ op: v.operation, bisect: v.bisectState }))
+  assert.deepEqual(state(after.box.hv), state(before.box.hv), bad)
   if (opts && opts.origin) assert.deepEqual(graph({ hv: after.box.ov }), graph({ hv: before.box.ov }), bad)
 }

@@ -1214,6 +1214,26 @@ function controlBoxFactory() {
             }
         },
 
+        // rev-parse <rev>... / --abbrev-ref HEAD
+        'rev-parse': function (args) {
+            var hv = this.historyView, control = this,
+                abbrev = args.indexOf('--abbrev-ref') > -1,
+                refs = args.filter(function (a) { return a.charAt(0) !== '-'; });
+            if (!refs.length) {
+                throw new Error(tr('needRef'));
+            }
+            var commits = refs.map(function (r) {
+                var c = hv.getCommit(r);
+                if (!c || c.id === ROOT) {
+                    throw new Error(tr('noRef', r));
+                }
+                return c;
+            });
+            commits.forEach(function (c, i) {
+                control.plain(abbrev && refs[i] === 'HEAD' && hv.currentBranch ? hv.currentBranch : c.id);
+            });
+        },
+
         'cherry-pick': function (args) {
             var hv = this.historyView,
                 refs = args.filter(function (a) { return a.charAt(0) !== '-'; });
@@ -1943,23 +1963,37 @@ function historyViewFactory(d3) {
          */
         getCommit: function getCommit(ref) {
             var commitData = this.commitData,
-                // <ref>^, <ref>^^, <ref>~2, combined: walk first parents
-                suffix = typeof ref === 'string' && /^(.+?)((?:\^|~\d*)+)$/.exec(ref),
+                // <ref>^, <ref>^2, <ref>~2, combined; ^n picks the n-th parent
+                suffix = typeof ref === 'string' && /^(.+?)((?:\^\d*|~\d*)+)$/.exec(ref),
+                at = typeof ref === 'string' && /^(.*?)@\{([^}]+)\}$/.exec(ref),
                 matchedCommit = null;
 
             if (ref === ROOT) {
                 return this.initialCommit;
             }
+            if (ref === '@') {
+                return getCommit.call(this, 'HEAD');
+            }
+
+            // <branch>@{u} / @{upstream}, <ref>@{n} (reflog); stash@{n} are plain names
+            if (at && at[1] !== 'stash') {
+                return this._resolveAt(at[1], at[2]);
+            }
 
             if (suffix) {
-                var steps = 0;
-                suffix[2].replace(/\^|~(\d*)/g, function (op, n) {
-                    steps += op === '^' ? 1 : Number(n || 1);
-                });
+                var view = this;
                 matchedCommit = getCommit.call(this, suffix[1]);
-                while (matchedCommit && steps-- > 0) {
-                    matchedCommit = getCommit.call(this, matchedCommit.parent);
-                }
+                suffix[2].replace(/\^(\d*)|~(\d*)/g, function (op, caret, tilde) {
+                    var n = op.charAt(0) === '^' ? (caret === '' ? 1 : Number(caret)) : Number(tilde || 1);
+                    if (op.charAt(0) === '^') {
+                        matchedCommit = !matchedCommit ? null : n === 0 ? matchedCommit
+                            : getCommit.call(view, n === 1 ? matchedCommit.parent : n === 2 ? matchedCommit.parent2 : null);
+                    } else {
+                        while (matchedCommit && n-- > 0) {
+                            matchedCommit = getCommit.call(view, matchedCommit.parent);
+                        }
+                    }
+                });
                 // nothing comes before the first commit (git: unknown revision)
                 return matchedCommit && matchedCommit.id !== ROOT ? matchedCommit : null;
             }
@@ -2615,6 +2649,23 @@ function historyViewFactory(d3) {
                 }
                 return p;
             });
+        },
+
+        _resolveAt: function (name, spec) {
+            var branch = name || this.currentBranch;
+            if (spec === 'u' || spec === 'upstream') {
+                return branch ? this.getCommit(this.upstream[branch] || 'origin/' + branch) : null;
+            }
+            if (/^\d+$/.test(spec)) {
+                var entry = this.reflogFor(name || 'HEAD')[Number(spec)];
+                return entry ? this.getCommit(entry.id) : null;
+            }
+            return null;
+        },
+
+        // reflog entries of a ref, newest first (HEAD@{0} is where it is now)
+        reflogFor: function (ref) {
+            return (this.reflog && this.reflog[ref]) || [];
         },
 
         // the best common ancestor: common to both, and no other common ancestor is newer

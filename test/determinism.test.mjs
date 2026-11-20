@@ -18,6 +18,7 @@ export const SCRIPTS = [
   { name: 'detached commits', cmds: ['git commit', 'git switch --detach HEAD', 'git commit', 'git commit --amend -m x', 'git switch -c saved'] },
   { name: 'files', cmds: ['echo "a b" > f', 'git add f', 'git commit -m one', 'echo c >> f', 'git commit -am two', 'git mv f g', 'git commit -m three'] },
   { name: 'reset and restore', cmds: ['echo v1 > f', 'git add f', 'git commit', 'echo v2 > f', 'git commit -am v2', 'git reset HEAD~', 'git restore f', 'git switch -c dev', 'echo u > u', 'git clean -f', 'git reset --hard'] },
+  { name: 'diff and show', cmds: ['echo a > f', 'git add f', 'git commit', 'echo b >> f', 'git diff', 'git diff --stat', 'git show'] },
 ]
 
 for (const { name, cmds, opts } of SCRIPTS)

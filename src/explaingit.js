@@ -1,7 +1,7 @@
 import * as d3selection from 'd3-selection'
 import 'd3-transition'
 import { tr, fill } from './i18n.js'
-import { sameLines } from './files.js'
+import { sameLines, formatDiff, changedPaths, diffStat } from './files.js'
 
 // id of the pseudo commit before the first one; contains a space, so no command can name it
 export const ROOT = 'initial commit'
@@ -768,6 +768,107 @@ function controlBoxFactory() {
                 }
                 setPath(hv.work, p, from[p]);
             });
+        },
+
+        // one line of diff output: colored, never translated
+        diffLine: function (text, kind) {
+            this.log.append('div')
+                .classed('diff', true)
+                .classed('diff-' + kind, true)
+                .classed('notranslate', true)
+                .attr('translate', 'no')
+                .text(text);
+            this._scrollToBottom();
+        },
+
+        _printDiff: function (a, b, paths, stat) {
+            var control = this,
+                only = function (p) { return !paths.length || paths.indexOf(p) > -1; };
+            if (stat) {
+                var st = diffStat(a, b);
+                st.files = st.files.filter(function (f) { return only(f.path); });
+                if (!st.files.length) {
+                    return;
+                }
+                st.files.forEach(function (f) {
+                    control.diffLine(' ' + f.path + ' | ' + (f.plus + f.minus) + ' ' +
+                        new Array(f.plus + 1).join('+') + new Array(f.minus + 1).join('-'), 'stat');
+                });
+                return this.diffLine(tr('statSummary', st.files.length,
+                    st.files.reduce(function (n, f) { return n + f.plus; }, 0),
+                    st.files.reduce(function (n, f) { return n + f.minus; }, 0)), 'stat');
+            }
+            changedPaths(a, b).filter(only).forEach(function (p) {
+                var hunk = false;
+                formatDiff(p, a[p], b[p]).forEach(function (line) {
+                    var kind = 'head';
+                    if (line.indexOf('@@') === 0) {
+                        hunk = true;
+                        kind = 'hunk';
+                    } else if (hunk) {
+                        kind = { '+': 'add', '-': 'del' }[line.charAt(0)] || 'ctx';
+                    }
+                    control.diffLine(line, kind);
+                });
+            });
+        },
+
+        _tree: function (ref) {
+            var commit = this.historyView.getCommit(ref);
+            if (!commit) {
+                throw new Error(tr('noRef', ref));
+            }
+            return commit.tree || {};
+        },
+
+        // diff [--staged] [--stat] [<a> [<b>] | <a>..<b> | <a>...<b>] [-- <path>...]
+        diff: function (args) {
+            var hv = this.historyView,
+                dashes = args.indexOf('--'),
+                paths = dashes > -1 ? args.slice(dashes + 1) : [],
+                opts = dashes > -1 ? args.slice(0, dashes) : args,
+                staged = opts.indexOf('--staged') > -1 || opts.indexOf('--cached') > -1,
+                stat = opts.indexOf('--stat') > -1,
+                refs = opts.filter(function (a) { return a.charAt(0) !== '-'; }),
+                a, b;
+
+            var range = refs.length === 1 && /^(.*?)(\.\.\.?)(.*)$/.exec(refs[0]);
+            if (range) {
+                var left = range[1] || 'HEAD', right = range[3] || 'HEAD';
+                if (range[2] === '...') {
+                    var base = hv.mergeBase(left, right);
+                    this._tree(left);
+                    a = base ? base.tree : {};
+                } else {
+                    a = this._tree(left);
+                }
+                b = this._tree(right);
+            } else if (refs.length >= 2) {
+                a = this._tree(refs[0]);
+                b = this._tree(refs[1]);
+            } else if (refs.length === 1) {
+                a = this._tree(refs[0]);
+                b = staged ? hv.index : hv.work;
+            } else {
+                a = staged ? hv.headTree() : hv.index;
+                b = staged ? hv.index : hv.work;
+            }
+            this._printDiff(a, b, paths, stat);
+        },
+
+        show: function (args) {
+            var hv = this.historyView,
+                ref = args.filter(function (a) { return a.charAt(0) !== '-'; })[0] || 'HEAD',
+                commit = hv.getCommit(ref);
+            if (!commit) {
+                throw new Error(tr('noRef', ref));
+            }
+            this.diffLine('commit ' + commit.id, 'head');
+            if (commit.parent2) {
+                this.diffLine('Merge: ' + hv.getCommit(commit.parent).id + ' ' + commit.parent2, 'head');
+            }
+            this.diffLine('    ' + (commit.message || ''), 'ctx');
+            this._printDiff(hv.getCommit(commit.parent).tree || {}, commit.tree || {}, [], false);
         },
 
         status: function (args) {
@@ -2189,6 +2290,32 @@ function historyViewFactory(d3) {
                 }
                 return p;
             });
+        },
+
+        // the nearest common ancestor of two refs (breadth-first from b, first parents first)
+        mergeBase: function (a, b) {
+            var view = this, seen = {}, todo = [this.getCommit(a)], c;
+            while (todo.length) {
+                c = todo.shift();
+                if (c && c.id !== ROOT && !seen[c.id]) {
+                    seen[c.id] = true;
+                    todo.push(view.getCommit(c.parent), c.parent2 && view.getCommit(c.parent2));
+                }
+            }
+            todo = [this.getCommit(b)];
+            var visited = {};
+            while (todo.length) {
+                c = todo.shift();
+                if (!c || c.id === ROOT || visited[c.id]) {
+                    continue;
+                }
+                if (seen[c.id]) {
+                    return c;
+                }
+                visited[c.id] = true;
+                todo.push(view.getCommit(c.parent), c.parent2 && view.getCommit(c.parent2));
+            }
+            return null;
         },
 
         // paths in the working tree that the index does not know; .files keeps their content

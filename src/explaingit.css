@@ -128,6 +128,18 @@
     color: #FCC;
 }
 
+.explaingit .control-box .log .diff {
+    font-size: 12px;
+    padding: 0 5px;
+    white-space: pre-wrap;
+    color: #DDD;
+}
+
+.explaingit .control-box .log .diff-head { color: #FFF; font-weight: bold; }
+.explaingit .control-box .log .diff-hunk { color: #8CF; }
+.explaingit .control-box .log .diff-add { color: #8F8; }
+.explaingit .control-box .log .diff-del { color: #F88; }
+
 .explaingit .svg-container {
     position: absolute;
     top: 0; bottom: 0; right: 0; left: 250px;

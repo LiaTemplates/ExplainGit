@@ -124,6 +124,7 @@ const TEXT = {
     wouldRemove: f => `Would remove ${f}`,
     removing: f => `Removing ${f}`,
     requireForce: 'clean.requireForce is set: use -n to see or -f to delete.',
+    statSummary: (n, plus, minus) => [`${n} file${n == 1 ? '' : 's'} changed`].concat(plus > 0 ? [`${plus} insertion${plus == 1 ? '' : 's'}(+)`] : [], minus > 0 ? [`${minus} deletion${minus == 1 ? '' : 's'}(-)`] : []).join(', '),
     upToDate: 'Already up-to-date.'
   },
   de: {
@@ -244,6 +245,7 @@ const TEXT = {
     wouldRemove: f => `Würde ${f} löschen`,
     removing: f => `Lösche ${f}`,
     requireForce: 'clean.requireForce ist gesetzt: mit -n ansehen oder mit -f löschen.',
+    statSummary: (n, plus, minus) => [`${n} Datei${n == 1 ? '' : 'en'} geändert`].concat(plus > 0 ? [`${plus} Einfügung${plus == 1 ? '' : 'en'}(+)`] : [], minus > 0 ? [`${minus} Löschung${minus == 1 ? '' : 'en'}(-)`] : []).join(', '),
     upToDate: 'Bereits aktuell.'
   },
   uk: {
@@ -364,6 +366,7 @@ const TEXT = {
     wouldRemove: f => `Буде видалено ${f}`,
     removing: f => `Видалення ${f}`,
     requireForce: 'Встановлено clean.requireForce: використайте -n, щоб переглянути, або -f, щоб видалити.',
+    statSummary: (n, plus, minus) => [`Змінено файлів: ${n}`].concat(plus > 0 ? [`додано рядків: ${plus}(+)`] : [], minus > 0 ? [`видалено рядків: ${minus}(-)`] : []).join(', '),
     upToDate: 'Уже актуально.'
   }
 }
@@ -395,7 +398,8 @@ const mark = a => (/[\u2068\u2069]/.test(a) ? a : '\u2068' + a + '\u2069')
 
 export function tr(key, ...args) {
   const t = TEXT[lang()][key] ?? TEXT.en[key]
-  return typeof t === 'function' ? t(...args.map(a => mark(String(a)))) : t
+  // numbers stay numbers (plural rules); names are marked
+  return typeof t === 'function' ? t(...args.map(a => (typeof a === 'number' ? a : mark(String(a))))) : t
 }
 
 // sets a message as text, the marked names as <span translate="no">;

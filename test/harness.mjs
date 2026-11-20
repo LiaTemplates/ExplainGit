@@ -17,7 +17,7 @@ export function run(cmds, opts = {}) {
   const box = new repo.Sandbox(area, opts.name || 'test', { origin: !!opts.origin, init: opts.init || 'master', intro: '' })
   for (const cmd of cmds) box.run(cmd)
   const log = [...area.querySelectorAll('.log > div')].map(el => ({
-    kind: el.classList.contains('command-entry') ? 'cmd' : el.classList.contains('error') ? 'error' : 'info',
+    kind: el.classList.contains('command-entry') ? 'cmd' : el.classList.contains('error') ? 'error' : el.classList.contains('diff') ? 'diff' : 'info',
     text: el.textContent.replace(/[⁨⁩]/g, '')
   }))
   return { box, log, state: repo.snapshot(box) }
